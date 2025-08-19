@@ -27,7 +27,11 @@ class ProductsTable
                 //
             ])
             ->recordActions([
-                EditAction::make(),
+                EditAction::make()
+                    ->disabled(fn($record) => $record->transactions()->exists())
+                    ->tooltip(fn($record) => $record->transactions()->exists()
+                        ? 'Produk memiliki transaksi dan tidak bisa diperbaharui.'
+                        : null),
                 DeleteAction::make()
                     ->requiresConfirmation()
                     ->action(function ($record, DeleteAction $action) {
