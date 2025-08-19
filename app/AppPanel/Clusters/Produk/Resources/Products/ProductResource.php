@@ -1,0 +1,53 @@
+<?php
+
+namespace App\AppPanel\Clusters\Produk\Resources\Products;
+
+use App\AppPanel\Clusters\Produk\ProdukCluster;
+use App\AppPanel\Clusters\Produk\Resources\Products\Pages\CreateProduct;
+use App\AppPanel\Clusters\Produk\Resources\Products\Pages\EditProduct;
+use App\AppPanel\Clusters\Produk\Resources\Products\Pages\ListProducts;
+use App\AppPanel\Clusters\Produk\Resources\Products\Schemas\ProductForm;
+use App\AppPanel\Clusters\Produk\Resources\Products\Tables\ProductsTable;
+use App\Models\Inventory\Product;
+use BackedEnum;
+use Filament\Resources\Resource;
+use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
+use Filament\Tables\Table;
+
+class ProductResource extends Resource
+{
+    protected static ?string $model = Product::class;
+
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedClipboardDocumentList;
+
+    protected static ?string $cluster = ProdukCluster::class;
+
+    protected static ?string $recordTitleAttribute = 'Produk';
+
+    public static function form(Schema $schema): Schema
+    {
+        return ProductForm::configure($schema);
+    }
+
+    public static function table(Table $table): Table
+    {
+        return ProductsTable::configure($table);
+    }
+
+    public static function getRelations(): array
+    {
+        return [
+            //
+        ];
+    }
+
+    public static function getPages(): array
+    {
+        return [
+            'index' => ListProducts::route('/'),
+            'create' => CreateProduct::route('/create'),
+            'edit' => EditProduct::route('/{record}/edit'),
+        ];
+    }
+}
