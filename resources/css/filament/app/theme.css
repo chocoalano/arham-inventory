@@ -1,8 +1,60 @@
 @import '../../../../vendor/filament/filament/resources/css/theme.css';
 
+/* Tailwind v4 content sources */
 @source '../../../../app/AppPanel/**/*';
 @source '../../../../resources/views/filament/**/*';
 
-.fi-sidebar {
-    @apply bg-gray-50 dark:bg-gray-950 ring-1 ring-gray-200 dark:ring-gray-800;
+/* ===== Brand Colors ===== */
+/* Gold: #D6BB83 | Soft Gold: #F3E7D3 | Dark body: #080808 | Dark base: #0B0B0B */
+
+@layer components {
+  /* ===== Sidebar Items ===== */
+
+  /* Wrapper UL */
+  .fi-sidebar-group-items { @apply space-y-1; }
+
+  /* LI umum */
+  .fi-sidebar-item { @apply rounded-xl; }
+
+  /* Tombol item */
+  .fi-sidebar-item-btn {
+    @apply flex items-center gap-3 px-3 py-2 rounded-xl transition-colors duration-150;
+
+    /* Base colors (tanpa ring, tanpa hover override) */
+    @apply bg-white text-gray-900 dark:bg-[#0B0B0B] dark:text-white;
+
+    /* Disable ring/outlines pada non-aktif */
+    @apply ring-0 focus:ring-0 focus:outline-none dark:ring-0 dark:focus:ring-0;
+  }
+
+  /* Ikon & label (biarkan hover default Filament, jadi tidak override di sini) */
+  .fi-sidebar-item-icon { @apply h-5 w-5 shrink-0 text-gray-500 dark:text-gray-300; }
+  .fi-sidebar-item-label { @apply text-sm font-medium tracking-wide; }
+
+  /* Hapus override hover agar kembali ke default Filament */
+  .fi-sidebar-item:hover .fi-sidebar-item-icon { /* no-op: biarkan default */ }
+
+  /* ===== Active State ===== */
+  .fi-sidebar-item.fi-active .fi-sidebar-item-btn {
+    /* Light: highlight lembut */
+    @apply bg-[#F3E7D3]/70 text-gray-900;
+
+    /* Dark: highlight gold transparan + teks gold */
+    @apply dark:bg-[#D6BB83]/15 dark:text-[#D6BB83];
+
+    /* Tidak pakai ring di aktif (kalau mau ring tipis, tambahkan kembali ring-1 ...) */
+    @apply ring-0 dark:ring-0;
+  }
+  .fi-sidebar-item.fi-active .fi-sidebar-item-icon { @apply text-[#D6BB83]; }
 }
+
+/* ===== Container & Surfaces ===== */
+
+/* Sidebar container: boleh punya ring halus (bukan per-item),
+   kalau benar-benar ingin tanpa ring sama sekali, hapus baris ring-* berikut */
+.fi-sidebar {
+  @apply bg-white dark:bg-[#0B0B0B]
+         ring-1 ring-[#D6BB83]/20 dark:ring-[#D6BB83]/15;
+}
+
+.fi-topbar-ctn .fi-topbar { @apply bg-white dark:bg-[#0B0B0B]; }

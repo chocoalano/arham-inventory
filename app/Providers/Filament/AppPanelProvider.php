@@ -34,9 +34,16 @@ class AppPanelProvider extends PanelProvider
             ->maxContentWidth(Width::Full)
             ->subNavigationPosition(SubNavigationPosition::Top)
             ->brandName('Arham Stock System')
+            ->brandLogo(asset('images/logo.png'))
+            ->brandLogoHeight('3rem')
             ->login()
             ->colors([
-                'primary' => Color::Red,
+                'danger' => Color::Rose,       // untuk error / delete
+                // 'gray' => Color::hex('#0B0B0B'),       // tetap abu-abu netral
+                'info' => Color::Blue,       // tetap biru (informasi)
+                'primary' => Color::hex('#D6BB83'), // emas-beige dari logo
+                'success' => Color::Emerald,    // hijau sukses
+                'warning' => Color::Amber,
             ])
             ->viteTheme('resources/css/filament/app/theme.css')
             ->discoverResources(in: app_path('AppPanel/Resources'), for: 'App\\AppPanel\\Resources')
@@ -47,8 +54,8 @@ class AppPanelProvider extends PanelProvider
             ])
             ->discoverWidgets(in: app_path('AppPanel/Widgets'), for: 'App\AppPanel\Widgets')
             ->widgets([
-                // AccountWidget::class,
-                // FilamentInfoWidget::class,
+                    // AccountWidget::class,
+                    // FilamentInfoWidget::class,
                 StatsInventoryOverview::class,
             ])
             ->middleware([

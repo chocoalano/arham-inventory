@@ -113,7 +113,7 @@ class InvoiceResource extends Resource
             ->recordActions([
                 Action::make('cetak_invoice')
                     ->label('Cetak invoice')
-                    ->url(fn(): string => route('inventory.cetak-invoice'))
+                    ->url(fn($record): string => route('inventory.cetak-invoice', ['id' => $record->id]))
                     ->openUrlInNewTab()
                     ->visible(fn(): bool => auth()->user()->hasPermissionTo('viewAny-invoice')),
                 EditAction::make(),

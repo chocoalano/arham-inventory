@@ -6,6 +6,7 @@ use App\AppPanel\Clusters\Inventory\InventoryCluster;
 use App\AppPanel\Clusters\Inventory\Resources\InventoryMovements\Pages\ManageInventoryMovements;
 use App\AppPanel\Clusters\Inventory\Resources\InventoryMovements\Widgets\InventoryStats;
 use App\Models\Inventory\InventoryMovement;
+use App\Models\Inventory\Invoice;
 use App\Models\Inventory\ProductVariant;
 use App\Models\Inventory\Transaction;
 use App\Models\Inventory\Warehouse;
@@ -136,11 +137,11 @@ class InventoryMovementResource extends Resource
                 ActionGroup::make([
                     // Label 'Cetak resi' sudah benar
                     Action::make('cetak_resi')
-                        ->label('Cetak resi')
-                        ->url(fn(): string => route('inventory.cetak-resi'))
+                        ->label('Cetak Packing Slip')
+                        ->url(fn($record): string => route('inventory.cetak-resi', ['id' => $record->id]))
                         ->openUrlInNewTab()
                         ->visible(fn(): bool => auth()->user()->hasPermissionTo('viewAny-invoice'))
-                        ->icon(Heroicon::Printer),
+                        ->icon('heroicon-o-printer'),
                     // Mengubah label 'Edit' menjadi 'Ubah'
                     EditAction::make()->label('Ubah'),
                     // Mengubah label 'Delete' menjadi 'Hapus'

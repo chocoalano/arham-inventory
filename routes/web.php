@@ -6,8 +6,8 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', function () {
     return redirect('app');
 });
-Route::get('/cetak-resi', [InventoryController::class, 'cetak_resi'])
+Route::get('/cetak-resi/{id}', [InventoryController::class, 'cetak_resi'])
     ->name('inventory.cetak-resi');
-Route::get('/cetak-invoice', [InventoryController::class, 'cetak_invoice'])
+Route::get('/cetak-invoice/{id}', [InventoryController::class, 'cetak_invoice'])
     ->name('inventory.cetak-invoice');
 
