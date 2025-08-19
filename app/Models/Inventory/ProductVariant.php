@@ -68,5 +68,8 @@ class ProductVariant extends Model
             ->where('warehouse_id', $warehouseId)
             ->value('qty') ?? 0;
     }
-
+    public function transactions(): HasMany
+    {
+        return $this->hasMany(InventoryMovement::class, 'product_variant_id');
+    }
 }

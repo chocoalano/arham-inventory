@@ -102,4 +102,24 @@ class Product extends Model
             ->selectRaw('COALESCE(SUM(COALESCE(qty, 0) - COALESCE(reserved_qty, 0)), 0) as onhand')
             ->value('onhand');
     }
+
+    public function transactions(): HasManyThrough
+    {
+        return $this->hasManyThrough(
+            InventoryMovement::class, // related (tujuan akhir)
+            ProductVariant::class,    // through (perantara)
+            'product_id',             // firstKey: FK di ProductVariant yang refer ke Product
+            'product_variant_id',     // secondKey: FK di InventoryMovement yang refer ke ProductVariant
+            'id',                     // localKey: PK di Product
+            'id'                      // secondLocalKey: PK di ProductVariant
+        );
+    }
+
+    /**
+     * True jika produk punya transaksi (lewat salah satu variannya).
+     */
+    public function hasAnyTransaction(): bool
+    {
+        return $this->transactions()->exists();
+    }
 }
