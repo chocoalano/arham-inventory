@@ -26,6 +26,8 @@ class UserResource extends Resource
     protected static ?string $cluster = SettingsCluster::class;
 
     protected static ?string $recordTitleAttribute = 'User';
+    protected static ?string $modelLabel = 'Pengguna';
+    protected static ?string $navigationLabel = 'Pengguna';
 
     public static function form(Schema $schema): Schema
     {

@@ -24,6 +24,8 @@ class ProductResource extends Resource
     protected static ?string $cluster = ProdukCluster::class;
 
     protected static ?string $recordTitleAttribute = 'Produk';
+    protected static ?string $modelLabel = 'Produk';
+    protected static ?string $navigationLabel = 'Produk';
 
     public static function form(Schema $schema): Schema
     {

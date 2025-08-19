@@ -36,6 +36,8 @@ class PaymentResource extends Resource
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedBanknotes;
 
     protected static ?string $cluster = InventoryCluster::class;
+    protected static ?string $modelLabel = 'Pembayaran Penjualan';
+    protected static ?string $navigationLabel = 'Pembayaran Penjualan';
 
     public static function form(Schema $schema): Schema
     {

@@ -34,17 +34,20 @@ class SupplierResource extends Resource
 {
     protected static ?string $model = Supplier::class;
 
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::UserPlus;
 
     protected static ?string $cluster = ProdukCluster::class;
 
-    protected static ?string $recordTitleAttribute = 'Supplier';
+    protected static ?string $recordTitleAttribute = 'Pemasok';
+
+    protected static ?string $modelLabel = 'Pemasok Produk';
+    protected static ?string $navigationLabel = 'Pemasok Produk';
 
     public static function form(Schema $schema): Schema
     {
         return $schema
             ->components([
-                Section::make('Data Supplier')
+                Section::make('Data Pemasok')
                     ->columns(3)
                     ->schema([
                         TextInput::make('code')
@@ -115,7 +118,7 @@ class SupplierResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
-            ->recordTitleAttribute('Supplier')
+            ->recordTitleAttribute('Pemasok')
             ->columns([
                 TextColumn::make('code')->label('Kode')->searchable()->sortable(),
                 TextColumn::make('name')->label('Gudang')->searchable()->sortable(),

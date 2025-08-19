@@ -35,17 +35,17 @@ class InvoiceResource extends Resource
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedReceiptPercent;
 
     protected static ?string $cluster = InventoryCluster::class;
+    protected static ?string $modelLabel = 'Faktur Penjualan';
+    protected static ?string $navigationLabel = 'Faktur Penjualan';
 
     public static function form(Schema $schema): Schema
     {
         return $schema
             ->components([
-                Section::make('Header')->columns(2)->schema([
+                Section::make('Informasi Faktur')->columns(2)->schema([
                     Select::make('transaction_id')->label('Transaksi')
                         ->options(fn() => Transaction::query()
-                            ->whereIn('type', ['penjualan', 'dropship'])
-                            ->whereDoesntHave('invoice')
-                            ->latest('transaction_date')
+                            ->whereIn('type', ['penjualan'])
                             ->pluck('reference_number', 'id'))
                         ->searchable()->preload()->required()
                         ->live(),
@@ -54,18 +54,25 @@ class InvoiceResource extends Resource
                         ->required()->unique(ignoreRecord: true),
                     DateTimePicker::make('issued_at')->label('Tanggal Terbit')->default(now()),
                     DateTimePicker::make('due_at')->label('Jatuh Tempo')->nullable(),
-                ]),
+                ])->columnSpanFull(),
 
-                Section::make('Nilai')->columns(2)->schema([
-                    TextInput::make('subtotal')->numeric()->prefix('Rp')->default(0)->required(),
-                    TextInput::make('discount_total')->numeric()->prefix('Rp')->default(0),
-                    TextInput::make('tax_total')->numeric()->prefix('Rp')->default(0),
-                    TextInput::make('shipping_fee')->numeric()->prefix('Rp')->default(0),
-                    TextInput::make('total_amount')->numeric()->prefix('Rp')->default(0)->helperText('Boleh diisi manual atau dihitung dari subtotal - diskon + pajak + ongkir.'),
-                    TextInput::make('paid_amount')->numeric()->prefix('Rp')->default(0),
-                    Placeholder::make('status_paid')->label('Status')
+                Section::make('Detail Nilai Faktur')->columns(2)->schema([
+                    // Mengubah label 'subtotal' menjadi 'Subtotal'
+                    TextInput::make('subtotal')->label('Subtotal')->numeric()->prefix('Rp')->default(0)->required(),
+                    // Mengubah label 'discount_total' menjadi 'Total Diskon'
+                    TextInput::make('discount_total')->label('Total Diskon')->numeric()->prefix('Rp')->default(0),
+                    // Mengubah label 'tax_total' menjadi 'Total Pajak'
+                    TextInput::make('tax_total')->label('Total Pajak')->numeric()->prefix('Rp')->default(0),
+                    // Mengubah label 'shipping_fee' menjadi 'Biaya Pengiriman'
+                    TextInput::make('shipping_fee')->label('Biaya Pengiriman')->numeric()->prefix('Rp')->default(0),
+                    // Mengubah label 'total_amount' menjadi 'Jumlah Total'
+                    TextInput::make('total_amount')->label('Jumlah Total')->numeric()->prefix('Rp')->default(0)->helperText('Boleh diisi manual atau dihitung dari subtotal - diskon + pajak + ongkir.'),
+                    // Mengubah label 'paid_amount' menjadi 'Jumlah Dibayar'
+                    TextInput::make('paid_amount')->label('Jumlah Dibayar')->numeric()->prefix('Rp')->default(0),
+                    // Mengubah label 'status_paid' menjadi 'Status Pembayaran'
+                    Placeholder::make('status_paid')->label('Status Pembayaran')
                         ->content(fn(Get $get) => ((float) $get('paid_amount') >= (float) $get('total_amount')) ? 'Lunas' : 'Belum Lunas'),
-                ]),
+                ])->columnSpanFull(),
             ]);
     }
 

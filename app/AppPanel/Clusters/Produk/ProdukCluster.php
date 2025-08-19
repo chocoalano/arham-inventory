@@ -9,4 +9,5 @@ use Filament\Support\Icons\Heroicon;
 class ProdukCluster extends Cluster
 {
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedCloud;
+    protected static ?string $navigationLabel = 'Produk';
 }

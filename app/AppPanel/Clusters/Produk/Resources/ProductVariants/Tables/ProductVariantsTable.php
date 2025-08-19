@@ -23,7 +23,7 @@ class ProductVariantsTable
                     ->label('Total Stok')
                     ->state(
                         fn(ProductVariant $record): int =>
-                        $record->stocks->sum('quantity')
+                        $record->stocks->sum('qty')
                     ),
                 TextColumn::make('stock_list')
                     ->label('Stok per Gudang')
@@ -41,7 +41,7 @@ class ProductVariantsTable
                         return $stocks
                             ->map(function ($stock) {
                             $warehouse = e($stock->warehouse?->name ?? '-');
-                            $qty = (int) $stock->quantity;
+                            $qty = (int) $stock->qty;
 
                             // opsional: beri warna jika qty 0
                             $style = $qty <= 0 ? 'style="color:#dc2626;"' : '';

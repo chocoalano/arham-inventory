@@ -23,6 +23,9 @@ class TransactionResource extends Resource
 
     protected static ?string $cluster = InventoryCluster::class;
 
+    protected static ?string $modelLabel = 'Transaksi';
+    protected static ?string $navigationLabel = 'Transaksi';
+
     public static function form(Schema $schema): Schema
     {
         return TransactionForm::configure($schema);

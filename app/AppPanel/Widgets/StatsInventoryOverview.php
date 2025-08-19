@@ -114,12 +114,12 @@ class StatsInventoryOverview extends StatsOverviewWidget
                 ->descriptionIcon('heroicon-o-cube')
                 ->color('success'),
 
-            Stat::make('Low Stock', number_format($lowStockCount))
+            Stat::make('Stok Rendah', number_format($lowStockCount))
                 ->description($minStockCol ? "Mengacu `{$minStockCol}`" : "Threshold ≤ {$this->lowStockThreshold}")
                 ->descriptionIcon('heroicon-o-bell-alert')
                 ->color($lowStockCount > 0 ? 'warning' : 'success'),
 
-            Stat::make('Out of Stock', number_format($outOfStockCount))
+            Stat::make('Diluar stok', number_format($outOfStockCount))
                 ->description('Habis / tidak tersedia')
                 ->descriptionIcon('heroicon-o-no-symbol')
                 ->color($outOfStockCount > 0 ? 'danger' : 'success'),

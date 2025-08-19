@@ -9,4 +9,5 @@ use Filament\Support\Icons\Heroicon;
 class InventoryCluster extends Cluster
 {
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedBuildingOffice;
+    protected static ?string $navigationLabel = 'Inventori';
 }

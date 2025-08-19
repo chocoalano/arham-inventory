@@ -37,6 +37,8 @@ class RoleResource extends Resource
     protected static ?string $cluster = SettingsCluster::class;
 
     protected static ?string $recordTitleAttribute = 'Peran';
+    protected static ?string $modelLabel = 'Peran Pengguna';
+    protected static ?string $navigationLabel = 'Peran Pengguna';
 
     public static function form(Schema $schema): Schema
     {

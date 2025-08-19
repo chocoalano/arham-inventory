@@ -24,6 +24,8 @@ class ProductVariantResource extends Resource
     protected static ?string $cluster = ProdukCluster::class;
 
     protected static ?string $recordTitleAttribute = 'Variant';
+    protected static ?string $modelLabel = 'Jenis/Varian Produk';
+    protected static ?string $navigationLabel = 'Jenis/Varian Produk';
 
     public static function form(Schema $schema): Schema
     {
