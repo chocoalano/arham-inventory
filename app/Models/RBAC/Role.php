@@ -6,10 +6,12 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class Role extends Model
 {
-    use HasFactory;
+    use HasFactory, LogsActivity;
 
     // Menentukan nama tabel jika berbeda dari konvensi Laravel.
     protected $table = 'roles';
@@ -35,5 +37,13 @@ class Role extends Model
     public function users(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'user_role');
+    }
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logFillable()                 // log semua field fillable
+            ->useLogName('peran pengguna')          // nama log
+            ->dontSubmitEmptyLogs();        // hindari log kosong
     }
 }

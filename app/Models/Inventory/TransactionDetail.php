@@ -4,9 +4,12 @@ namespace App\Models\Inventory;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class TransactionDetail extends Model
 {
+    use LogsActivity;
     protected $fillable = [
         'transaction_id','product_id','product_variant_id',
         'warehouse_id','qty','price','discount_amount','line_total',
@@ -37,5 +40,13 @@ class TransactionDetail extends Model
     public function warehouse(): BelongsTo
     {
         return $this->belongsTo(Warehouse::class);
+    }
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logFillable()                 // log semua field fillable
+            ->useLogName('detail transaksi')          // nama log
+            ->dontSubmitEmptyLogs();        // hindari log kosong
     }
 }

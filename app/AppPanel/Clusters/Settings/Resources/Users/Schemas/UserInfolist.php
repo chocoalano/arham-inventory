@@ -20,6 +20,11 @@ class UserInfolist
                             ->label('Email address'),
                         TextEntry::make('email_verified_at')
                             ->dateTime(),
+                        TextEntry::make('warehouse.name')
+                            ->label('Area penempatan kerja'),
+                        TextEntry::make('roles.name')
+                            ->color('primary')
+                            ->label('Peran pengguna'),
                         TextEntry::make('created_at')
                             ->dateTime(),
                         TextEntry::make('updated_at')

@@ -29,6 +29,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\App;
+use Illuminate\Support\Facades\Auth;
 
 class SupplierResource extends Resource
 {
@@ -42,7 +43,14 @@ class SupplierResource extends Resource
 
     protected static ?string $modelLabel = 'Pemasok Produk';
     protected static ?string $navigationLabel = 'Pemasok Produk';
-
+    public static function shouldRegisterNavigation(): bool
+    {
+        $user = Auth::user();
+        if (!$user) {
+            return false;
+        }
+        return $user->hasAnyPermission(['viewAny-product', 'view-product']);
+    }
     public static function form(Schema $schema): Schema
     {
         return $schema

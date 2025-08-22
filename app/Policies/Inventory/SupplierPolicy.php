@@ -4,63 +4,61 @@ namespace App\Policies\Inventory;
 
 use App\Models\Inventory\Supplier;
 use App\Models\User;
-use Illuminate\Auth\Access\Response;
 
 class SupplierPolicy
 {
     /**
-     * Determine whether the user can view any models.
+     * Superadmin bypass semua ability.
+     */
+    public function before(User $user, string $ability): ?bool
+    {
+        if ($user->hasAnyRole(['Superadmin'])) {
+            return true;
+        }
+
+        return null;
+    }
+
+    /**
+     * Lihat daftar supplier.
      */
     public function viewAny(User $user): bool
     {
-        return true;
+        return $user->hasPermissionTo('viewAny-product');
     }
 
     /**
-     * Determine whether the user can view the model.
+     * Lihat supplier tertentu.
      */
-    public function view(User $user, Supplier $supplier): bool
+    public function view(User $user): bool
     {
-        return true;
+        return $user->hasPermissionTo('view-product');
     }
 
     /**
-     * Determine whether the user can create models.
+     * Membuat supplier baru.
      */
     public function create(User $user): bool
     {
-        return true;
+        return $user->hasPermissionTo('create-product');
     }
 
     /**
-     * Determine whether the user can update the model.
+     * Update supplier.
+     * Opsional: izinkan owner mengubah data yang ia buat sendiri
+     * jika model punya kolom user_id / created_by.
      */
-    public function update(User $user, Supplier $supplier): bool
+    public function update(User $user): bool
     {
-        return true;
+        return $user->hasPermissionTo('update-product');
     }
 
     /**
-     * Determine whether the user can delete the model.
+     * Hapus supplier.
+     * Opsional: cegah hapus bila masih terkait data penting.
      */
-    public function delete(User $user, Supplier $supplier): bool
+    public function delete(User $user): bool
     {
-        return true;
-    }
-
-    /**
-     * Determine whether the user can restore the model.
-     */
-    public function restore(User $user, Supplier $supplier): bool
-    {
-        return true;
-    }
-
-    /**
-     * Determine whether the user can permanently delete the model.
-     */
-    public function forceDelete(User $user, Supplier $supplier): bool
-    {
-        return true;
+        return $user->hasPermissionTo('delete-product');
     }
 }

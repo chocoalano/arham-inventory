@@ -26,19 +26,25 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Table;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 use PhpParser\Node\Expr\Cast\Bool_;
 
 class WarehouseResource extends Resource
 {
     protected static ?string $model = Warehouse::class;
-
     protected static string|BackedEnum|null $navigationIcon = Heroicon::BuildingLibrary;
-
     protected static ?string $cluster = InventoryCluster::class;
     protected static ?string $modelLabel = 'Gudang Penyimpanan';
     protected static ?string $navigationLabel = 'Gudang Penyimpanan';
-
+    public static function shouldRegisterNavigation(): bool
+    {
+        $user = Auth::user();
+        if (!$user) {
+            return false;
+        }
+        return $user->hasAnyPermission(['viewAny-warehouse', 'view-warehouse']);
+    }
     public static function form(Schema $schema): Schema
     {
         return $schema
@@ -138,7 +144,7 @@ class WarehouseResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 TextColumn::make('stocks_sum_qty')
-                    ->label('Jumlah Stok')
+                    ->label('Jumlah Item Tersimpan')
                     ->getStateUsing(fn($record) => $record->stocks->sum('qty'))
                     ->badge()
                     ->sortable(),

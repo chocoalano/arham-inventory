@@ -17,12 +17,15 @@ use Illuminate\Validation\ValidationException;
 class CreateTransaction extends CreateRecord
 {
     protected static string $resource = TransactionResource::class;
-
-    // STOCK: id, warehouse_id, product_variant_id, qty, reserved_qty, timestamps
+    protected function mutateFormDataBeforeCreate(array $data): array
+    {
+        $user = Auth::user();
+        if ($user && !$user->hasRole('Superadmin')) {
+            $data['source_warehouse_id'] = $user->warehouse_id;
+        }
+        return $data;
+    }
     private const STOCK_TABLE = 'warehouse_variant_stocks';
-
-    // MOVEMENT: id, transaction_id, type[in|out], from_warehouse_id, to_warehouse_id,
-    //           product_variant_id, qty, occurred_at, remarks, timestamps
     private const MOVEMENT_TABLE = 'inventory_movements';
 
     protected function handleRecordCreation(array $data): Model
@@ -111,8 +114,7 @@ class CreateTransaction extends CreateRecord
                 $detailPayload[] = [
                     'product_id' => (int) ($row['product_id'] ?? 0),
                     'product_variant_id' => (int) ($row['product_variant_id'] ?? 0),
-                    'source_warehouse_id' => (int) ($row['source_warehouse_id'] ?? $headerSource),
-                    'target_warehouse_id' => (int) ($row['target_warehouse_id']?? $headerDest),
+                    'warehouse_id' => (int) ($headerSource ?? $headerDest),
                     'qty' => (int) ($row['qty'] ?? 0),
                     'price' => (int) ($row['price'] ?? 0),
                     'discount_amount' => (int) ($row['discount_amount'] ?? 0),

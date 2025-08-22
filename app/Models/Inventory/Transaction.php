@@ -9,10 +9,12 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Str;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class Transaction extends Model
 {
-    use SoftDeletes;
+    use SoftDeletes, LogsActivity;
 
     public const STATUS_DRAFT = 'draft';
     public const STATUS_POSTED = 'posted';
@@ -105,5 +107,29 @@ class Transaction extends Model
     public function getIsPostedAttribute(): bool
     {
         return $this->status === self::STATUS_POSTED;
+    }
+    public function scopeForUser($query, User $user)
+    {
+        if ($user->hasRole('Superadmin')) {
+            return $query;
+        }
+
+        $wid = (int) ($user->warehouse_id ?? 0);
+        if ($wid <= 0) {
+            return $query->whereRaw('1 = 0'); // aman
+        }
+
+        return $query->where(function ($q) use ($wid) {
+            $q->where('source_warehouse_id', $wid)
+                ->orWhere('destination_warehouse_id', $wid);
+        });
+    }
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logFillable()                 // log semua field fillable
+            ->useLogName('transaksi')          // nama log
+            ->dontSubmitEmptyLogs();        // hindari log kosong
     }
 }

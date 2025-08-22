@@ -5,10 +5,12 @@ namespace App\Models\Inventory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class Stocks extends Model
 {
-    use HasFactory;
+    use HasFactory, LogsActivity;
 
     protected $fillable = [
         'product_variant_id',
@@ -32,5 +34,13 @@ class Stocks extends Model
     public function warehouse(): BelongsTo
     {
         return $this->belongsTo(Warehouse::class);
+    }
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logFillable()                 // log semua field fillable
+            ->useLogName('stok produk')          // nama log
+            ->dontSubmitEmptyLogs();        // hindari log kosong
     }
 }

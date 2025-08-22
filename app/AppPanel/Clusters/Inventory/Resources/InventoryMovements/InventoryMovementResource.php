@@ -10,6 +10,7 @@ use App\Models\Inventory\Invoice;
 use App\Models\Inventory\ProductVariant;
 use App\Models\Inventory\Transaction;
 use App\Models\Inventory\Warehouse;
+use App\Models\Inventory\WarehouseVariantStock;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
@@ -20,10 +21,12 @@ use Filament\Actions\EditAction;
 use Filament\Forms\Components\Builder;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
@@ -31,53 +34,191 @@ use Filament\Tables\Filters\Filter;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Filament\Tables\Table;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Auth;
 
 class InventoryMovementResource extends Resource
 {
     protected static ?string $model = InventoryMovement::class;
-
     protected static string|BackedEnum|null $navigationIcon = Heroicon::Truck;
-
     protected static ?string $cluster = InventoryCluster::class;
-
     protected static ?string $recordTitleAttribute = 'inventoryMovement';
     protected static ?string $modelLabel = 'Perpindahan Stok Barang';
     protected static ?string $navigationLabel = 'Perpindahan Stok Barang';
-
-
+    public static function shouldRegisterNavigation(): bool
+    {
+        $user = Auth::user();
+        if (!$user) {
+            return false;
+        }
+        return $user->hasAnyPermission(['viewAny-transaction', 'view-transaction']);
+    }
     public static function form(Schema $schema): Schema
     {
         return $schema
             ->components([
-                // Mengubah label section menjadi Bahasa Indonesia
-                Section::make('Perpindahan Stok Barang')->schema([
-                    // Mengubah label 'From Warehouse' menjadi 'Dari Gudang'
-                    Select::make('source_warehouse_id')->label('Dari Gudang')->options(
-                        fn() => Warehouse::orderBy('created_at')->pluck('name', 'id')
-                    ),
-                    // Mengubah label 'To Warehouse' menjadi 'Ke Gudang'
-                    Select::make('destination_warehouse_id')->label('Ke Gudang')->options(
-                        fn() => Warehouse::orderBy('created_at')->pluck('name', 'id')
-                    ),
-                    // Label 'Varian' sudah benar
-                    Select::make('product_variant_id')->label('Varian')->options(
-                        fn() => ProductVariant::orderBy('sku_variant')->pluck('sku_variant', 'id')
-                    ),
-                    // Mengubah label 'Perubahan Qty' menjadi 'Jumlah Perubahan'
-                    TextInput::make('qty_change')->label('Jumlah Perubahan'),
-                    // Label 'Tipe' sudah benar
-                    TextInput::make('type')->label('Tipe')->default('pemindahan')->disabled(),
-                    // Label 'Waktu' sudah benar
-                    DateTimePicker::make('occurred_at')->label('Waktu')->default(now()),
-                    // Label 'Catatan' sudah benar
-                    TextInput::make('remarks')->label('Catatan'),
-                ])->columnSpanFull(),
+                Section::make('Perpindahan Stok Barang')
+                    ->description('Catat perpindahan stok antar gudang. Pilih gudang sumber & tujuan, varian yang dipindahkan, lalu tentukan jumlah dan waktu perpindahan.')
+                    ->columns(2)
+                    ->schema([
+                        // Dari Gudang (Sumber)
+                        Select::make('source_warehouse_id')
+                            ->label('Dari Gudang')
+                            ->helperText('Gudang sumber tempat stok akan dikurangi.')
+                            ->options(function () {
+                                $user = Auth::user();
+                                if (!$user)
+                                    return [];
+
+                                return Warehouse::query()
+                                    ->forUser($user)
+                                    ->where('is_active', true)
+                                    ->orderBy('name')
+                                    ->pluck('name', 'id')
+                                    ->all();
+                            })
+                            ->searchable()
+                            ->preload()
+                            ->required()
+                            ->default(fn() => Auth::user()?->warehouse_id)
+                            ->disabled(fn() => Auth::user() && !Auth::user()->hasRole('Superadmin')) // “readonly” utk Select
+                            ->dehydrated()
+                            ->dehydrateStateUsing(function ($state) {
+                                // Hardening: non-superadmin dipaksa ke gudangnya sendiri
+                                $user = Auth::user();
+                                return ($user && !$user->hasRole('Superadmin')) ? $user->warehouse_id : $state;
+                            })
+                            ->reactive(), // agar field lain refresh ketika sumber berubah
+
+                        // Ke Gudang (Tujuan)
+                        Select::make('destination_warehouse_id')
+                            ->label('Ke Gudang')
+                            ->helperText('Gudang tujuan tempat stok akan ditambahkan. Tidak boleh sama dengan gudang sumber.')
+                            ->options(function (Get $get) {
+                                $src = (int) ($get('source_warehouse_id') ?? 0);
+
+                                return Warehouse::query()
+                                    ->when($src > 0, fn($q) => $q->where('id', '!=', $src))
+                                    ->where('is_active', true)
+                                    ->orderBy('name')
+                                    ->pluck('name', 'id')
+                                    ->all();
+                            })
+                            ->searchable()
+                            ->preload()
+                            ->required()
+                            ->rules(['different:source_warehouse_id'])
+                            ->reactive(),
+
+                        // Varian Produk
+                        Select::make('product_variant_id')
+                            ->label('Varian')
+                            ->helperText('Pilih varian yang akan dipindahkan. Daftar hanya menampilkan varian dengan stok tersedia di gudang sumber.')
+                            ->options(function (Get $get) {
+                                $user = Auth::user();
+                                if (!$user)
+                                    return [];
+
+                                $src = (int) ($get('source_warehouse_id') ?? ($user->hasRole('Superadmin') ? 0 : ($user->warehouse_id ?? 0)));
+                                $pid = $get('product_id'); // opsional: jika ada field produk di form
+
+                                $q = ProductVariant::query()
+                                    ->forUser($user) // sudah memfilter by gudang user & stok on-hand > 0
+                                    ->when($pid, fn($qq) => $qq->where('product_id', $pid))
+                                    ->when(
+                                        $src > 0,
+                                        fn($qq) =>
+                                        $qq->whereHas('stocks', function ($s) use ($src) {
+                                            $s->where('warehouse_id', $src)
+                                                ->whereRaw('(COALESCE(qty,0) - COALESCE(reserved_qty,0)) > 0');
+                                        })
+                                    )
+                                    ->orderBy('sku_variant');
+
+                                return $q->pluck('sku_variant', 'id')->all();
+                            })
+                            ->searchable()
+                            ->preload()
+                            ->required()
+                            ->disabled(fn(Get $get) => blank($get('source_warehouse_id')))
+                            ->reactive(),
+
+                        // Info stok tersedia (read-only)
+                        Placeholder::make('available_stock_display')
+                            ->label('Stok Tersedia di Gudang Sumber')
+                            ->content(function (Get $get) {
+                                $src = (int) ($get('source_warehouse_id') ?? 0);
+                                $vid = (int) ($get('product_variant_id') ?? 0);
+                                if ($src <= 0 || $vid <= 0) {
+                                    return '—';
+                                }
+
+                                $soh = (int) (WarehouseVariantStock::query()
+                                    ->where('warehouse_id', $src)
+                                    ->where('product_variant_id', $vid)
+                                    ->selectRaw('COALESCE(qty,0) - COALESCE(reserved_qty,0) AS soh')
+                                    ->value('soh') ?? 0);
+
+                                return number_format($soh, 0, ',', '.');
+                            })
+                            ->columnSpanFull()
+                            ->reactive(),
+
+                        // Jumlah yang dipindahkan
+                        TextInput::make('qty_change')
+                            ->label('Jumlah Dipindahkan')
+                            ->helperText('Jumlah unit yang akan dipindahkan dari gudang sumber ke gudang tujuan.')
+                            ->numeric()
+                            ->minValue(1)
+                            ->required()
+                            ->maxValue(function (Get $get) {
+                                $src = (int) ($get('source_warehouse_id') ?? 0);
+                                $vid = (int) ($get('product_variant_id') ?? 0);
+                                if ($src <= 0 || $vid <= 0)
+                                    return null;
+
+                                return (int) (WarehouseVariantStock::query()
+                                    ->where('warehouse_id', $src)
+                                    ->where('product_variant_id', $vid)
+                                    ->selectRaw('COALESCE(qty,0) - COALESCE(reserved_qty,0) AS soh')
+                                    ->value('soh') ?? 0);
+                            })
+                            ->reactive(),
+
+                        // Jenis transaksi
+                        TextInput::make('type')
+                            ->label('Tipe')
+                            ->default('pemindahan')
+                            ->disabled()
+                            ->helperText('Tipe transaksi dikunci sebagai pemindahan stok.'),
+
+                        // Waktu perpindahan
+                        DateTimePicker::make('occurred_at')
+                            ->label('Waktu')
+                            ->default(now())
+                            ->helperText('Tanggal & waktu ketika perpindahan dianggap terjadi.'),
+
+                        // Catatan tambahan
+                        TextInput::make('remarks')
+                            ->label('Catatan')
+                            ->helperText('Opsional: catat alasan atau referensi dokumen.')
+                            ->columnSpanFull(),
+                    ])
+                    ->columnSpanFull()
             ]);
     }
 
     public static function table(Table $table): Table
     {
+        $query = InventoryMovement::forUser(Auth::user())
+            ->with([
+                'transaction',
+                'from_warehouse',
+                'to_warehouse',
+                'variant',
+                'creator',
+            ]);
         return $table
+            ->query($query)
             ->recordTitleAttribute('InventoryMovement')
             ->columns([
                 // Menambahkan label 'Nomor Referensi'
@@ -89,7 +230,11 @@ class InventoryMovementResource extends Resource
                 // Menambahkan label 'Varian Produk'
                 TextColumn::make('variant.sku_variant')->label('Varian Produk')->searchable(),
                 // Label 'Jenis' sudah benar
-                TextColumn::make('type')->label('Jenis')->searchable(),
+                TextColumn::make('type')->label('Jenis')->badge()
+                    ->color(fn(string $state): string => match ($state) {
+                        'in' => 'success',
+                        'out' => 'danger',
+                    }),
                 // Mengubah label 'qty' menjadi 'Jumlah'
                 TextColumn::make('qty_change')->label('Jumlah')->searchable(),
                 // Menambahkan label 'Waktu'

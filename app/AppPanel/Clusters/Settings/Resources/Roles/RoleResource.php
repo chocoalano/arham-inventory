@@ -26,19 +26,26 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 
 class RoleResource extends Resource
 {
     protected static ?string $model = Role::class;
-
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleGroup;
-
     protected static ?string $cluster = SettingsCluster::class;
-
     protected static ?string $recordTitleAttribute = 'Peran';
     protected static ?string $modelLabel = 'Peran Pengguna';
     protected static ?string $navigationLabel = 'Peran Pengguna';
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        $user = Auth::user();
+        if (!$user) {
+            return false;
+        }
+        return $user->hasAnyPermission(['viewAny-role', 'view-role']);
+    }
 
     public static function form(Schema $schema): Schema
     {
@@ -75,6 +82,7 @@ class RoleResource extends Resource
                 TextColumn::make('label')
                     ->searchable(),
                 TextColumn::make('desc')
+                    ->limit(130)
                     ->searchable(),
             ])
             ->filters([

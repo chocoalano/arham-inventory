@@ -5,10 +5,12 @@ namespace App\Models\Inventory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class Supplier extends Model
 {
-    use SoftDeletes;
+    use SoftDeletes, LogsActivity;
 
     protected $fillable = [
         'code','name','contact_name','phone','email',
@@ -30,5 +32,13 @@ class Supplier extends Model
     public function transactions(): HasMany
     {
         return $this->hasMany(Transaction::class);
+    }
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logFillable()                 // log semua field fillable
+            ->useLogName('pemasok')          // nama log
+            ->dontSubmitEmptyLogs();        // hindari log kosong
     }
 }

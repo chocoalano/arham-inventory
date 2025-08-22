@@ -17,38 +17,129 @@ use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\Summarizers\Sum;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 
 class InvoiceResource extends Resource
 {
     protected static ?string $model = Invoice::class;
-
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedReceiptPercent;
-
     protected static ?string $cluster = InventoryCluster::class;
     protected static ?string $modelLabel = 'Faktur Penjualan';
     protected static ?string $navigationLabel = 'Faktur Penjualan';
-
+    public static function shouldRegisterNavigation(): bool
+    {
+        $user = Auth::user();
+        if (!$user) {
+            return false;
+        }
+        return $user->hasAnyPermission(['viewAny-invoice', 'view-invoice']);
+    }
     public static function form(Schema $schema): Schema
     {
         return $schema
             ->components([
                 Section::make('Informasi Faktur')->columns(2)->schema([
                     Select::make('transaction_id')->label('Transaksi')
-                        ->options(fn() => Transaction::query()
-                            ->whereIn('type', ['penjualan'])
-                            ->pluck('reference_number', 'id'))
+                        ->options(function () {
+                            $user = Auth::user();
+                            if (!$user) {
+                                return [];
+                            }
+
+                            return Transaction::query()
+                                ->forUser($user)
+                                ->where('type', 'penjualan')
+                                ->orderByDesc('id')
+                                ->pluck('reference_number', 'id')
+                                ->all();
+                        })
                         ->searchable()->preload()->required()
-                        ->live(),
+                        ->live()
+                        ->afterStateUpdated(function (Set $set, Get $get, $state) {
+                            // Reset semua field jika transaksi dikosongkan
+                            if (blank($state)) {
+                                $set('invoice_number', null);
+                                $set('issued_at', null);
+                                $set('due_at', null);
+                                $set('subtotal', 0);
+                                $set('discount_total', 0);
+                                $set('tax_total', 0);
+                                $set('shipping_fee', 0);
+                                $set('total_amount', 0);
+                                $set('paid_amount', 0);
+                                return;
+                            }
+                            $trx = Transaction::query()
+                                ->with('invoice')
+                                ->find($state);
+                            if (!$trx) {
+                                return;
+                            }
+                            if ($trx->invoice) {
+                                $set('transaction_id', null);
+                                $set('invoice_number', null);
+                                $set('issued_at', null);
+                                $set('due_at', null);
+                                $set('subtotal', 0);
+                                $set('discount_total', 0);
+                                $set('tax_total', 0);
+                                $set('shipping_fee', 0);
+                                $set('total_amount', 0);
+                                $set('paid_amount', 0);
+                                Notification::make()
+                                    ->title('Maaf, Anda tidak dapat membuat invoice baru untuk transaksi ini. Invoice sudah diterbitkan sebelumnya.')
+                                    ->danger()
+                                    ->send();
+                            } else {
+                                // 1) Generate nomor invoice baru (menimpa agar otomatis)
+                                $prefix = 'INV-' . now()->format('Ymd') . '-';
+                                $candidate = null;
+                                for ($i = 0; $i < 5; $i++) {
+                                    $try = $prefix . Str::upper(Str::random(6));
+                                    if (!Invoice::query()->where('invoice_number', $try)->exists()) {
+                                        $candidate = $try;
+                                        break;
+                                    }
+                                }
+                                $candidate ??= $prefix . Str::upper(Str::random(10));
+                                $set('invoice_number', $candidate);
+
+                                // 2) Tanggal terbit = tanggal transaksi (atau now), due = +30 hari
+                                $issuedAt = $trx->transaction_date ?? now();
+                                $set('issued_at', $issuedAt);
+                                $set('due_at', \Illuminate\Support\Carbon::parse($issuedAt)->copy()->addDays(30));
+
+                                // 3) Nilai invoice dari transaksi
+                                $subtotal = (int) ($trx->grand_total ?? 0);
+                                $set('subtotal', $subtotal);
+
+                                // Normalisasi nilai lain (pertahankan jika sudah terisi, kalau kosong isi 0)
+                                $discount = (int) ($get('discount_total') ?? 0);
+                                $tax = (int) ($get('tax_total') ?? 0);
+                                $shipping = (int) ($get('shipping_fee') ?? 0);
+
+                                $set('discount_total', $discount);
+                                $set('tax_total', $tax);
+                                $set('shipping_fee', $shipping);
+
+                                // 4) Hitung total & set paid_amount awal = 0
+                                $total = max(0, $subtotal - $discount + $tax + $shipping);
+                                $set('total_amount', $total);
+                                $set('paid_amount', (int) ($get('paid_amount') ?? 0)); // boleh biarkan 0 atau pertahankan
+                            }
+                        }),
 
                     TextInput::make('invoice_number')->label('Nomor Invoice')
                         ->required()->unique(ignoreRecord: true),
@@ -78,7 +169,10 @@ class InvoiceResource extends Resource
 
     public static function table(Table $table): Table
     {
+        $query = Invoice::forUser(Auth::user())
+            ->with(['transaction', 'payments']);
         return $table
+            ->query($query)
             ->columns([
                 TextColumn::make('invoice_number')
                     ->label('Nomor Invoice')

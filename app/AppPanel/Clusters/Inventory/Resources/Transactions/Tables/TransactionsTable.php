@@ -2,22 +2,34 @@
 
 namespace App\AppPanel\Clusters\Inventory\Resources\Transactions\Tables;
 
+use App\Models\Inventory\Transaction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
+use Filament\Support\Enums\Width;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Auth;
 
 class TransactionsTable
 {
     public static function configure(Table $table): Table
     {
+        $user = Auth::user();
+        $query = $user->hasRole('Superadmin')
+            ? Transaction::query()
+            : Transaction::where(function ($q) use ($user) {
+                $q->where('source_warehouse_id', $user->warehouse_id)
+                    ->orWhere('destination_warehouse_id', $user->warehouse_id);
+            });
         return $table
+            ->query($query)
             ->columns([
                 TextColumn::make('reference_number')
                     ->label('Nomor Referensi')
@@ -26,7 +38,7 @@ class TransactionsTable
                 TextColumn::make('type')
                     ->label('Tipe Transaksi')
                     ->badge()
-                    ->color(fn (string $state): string => match ($state) {
+                    ->color(fn(string $state): string => match ($state) {
                         'penjualan' => 'success',
                         'dropship' => 'info',
                         'pengiriman' => 'warning',
@@ -39,13 +51,6 @@ class TransactionsTable
                     ->label('Tanggal Transaksi')
                     ->date()
                     ->sortable(),
-                TextColumn::make('customer_name')
-                    ->label('Nama Pelanggan')
-                    ->searchable()
-                    ->sortable(),
-                TextColumn::make('shipping_address')
-                    ->label('Alamat Pengiriman')
-                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('created_at')
                     ->label('Dibuat Pada')
                     ->dateTime()
@@ -70,16 +75,69 @@ class TransactionsTable
                         return $query
                             ->when(
                                 $data['min_date'],
-                                fn (Builder $query, $date): Builder => $query->whereDate('transaction_date', '>=', $date),
+                                fn(Builder $query, $date): Builder => $query->whereDate('transaction_date', '>=', $date),
                             )
                             ->when(
                                 $data['max_date'],
-                                fn (Builder $query, $date): Builder => $query->whereDate('transaction_date', '<=', $date),
+                                fn(Builder $query, $date): Builder => $query->whereDate('transaction_date', '<=', $date),
                             );
                     }),
             ])
             ->recordActions([
-                // EditAction::make(),
+                ViewAction::make()
+                    ->modalHeading('Detail Transaksi')
+                    ->modalWidth(Width::Full)
+                    ->mutateRecordDataUsing(function (array $data, Transaction $record): array {
+                        // Eager load relasi yang dibutuhkan untuk tampilan
+                        $record->loadMissing([
+                            'details',
+                            'sourceWarehouse',
+                            'destinationWarehouse',
+                            'supplier',
+                            'creator',
+                            'invoice',
+                            // Sesuaikan dengan nama relasi movement Anda:
+                            // 'movements', // atau 'inventoryMovements'
+                        ]);
+
+                        // Mapping details -> array datar untuk Repeater
+                        $data['details'] = $record->details
+                            ->map(function ($d) use ($record) {
+                            return [
+                                'warehouse_id' => (int) ($d->warehouse_id
+                                    ?? $record->source_warehouse_id
+                                    ?? $record->destination_warehouse_id),
+                                'product_id' => (int) $d->product_id,
+                                'product_variant_id' => (int) $d->product_variant_id,
+                                'qty' => (int) $d->qty,
+                                'price' => (int) ($d->price ?? 0),
+                                'discount_amount' => (int) ($d->discount_amount ?? 0),
+                                'line_total' => (int) ($d->line_total ?? ((int) ($d->price ?? 0) * (int) ($d->qty ?? 0))),
+                            ];
+                        })
+                            ->values()
+                            ->all();
+
+                        // Sinkronkan field header – penting agar rules visible/dehydrate di form tetap benar
+                        $data['reference_number'] = $record->reference_number;
+                        $data['type'] = $record->type;
+                        $data['transaction_date'] = $record->transaction_date;
+                        $data['source_warehouse_id'] = $record->source_warehouse_id;
+                        $data['destination_warehouse_id'] = in_array($record->type, ['pemindahan', 'pengembalian', 'penyesuaian'])
+                            ? $record->destination_warehouse_id
+                            : null;
+
+                        // Field pelanggan hanya relevan saat penjualan (biar komponen visible() kamu bekerja mulus)
+                        $isSale = $record->type === 'penjualan';
+                        $data['customer_name'] = $isSale ? $record->customer_name : null;
+                        $data['customer_phone'] = $isSale ? $record->customer_phone : null;
+                        $data['customer_full_address'] = $isSale ? $record->customer_full_address : null;
+
+                        $data['remarks'] = $record->remarks;
+
+                        return $data;
+                    })
+                    ->modalWidth(Width::Full),
                 DeleteAction::make(),
             ])
             ->toolbarActions([

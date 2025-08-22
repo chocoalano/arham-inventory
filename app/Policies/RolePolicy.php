@@ -8,11 +8,11 @@ use App\Models\User;
 class RolePolicy
 {
     /**
-     * Admin bypass semua ability.
+     * Superadmin bypass semua ability.
      */
     public function before(User $user, string $ability): ?bool
     {
-        if ($user->hasAnyRole(['admin'])) {
+        if ($user->hasAnyRole(['Superadmin'])) {
             return true;
         }
 
@@ -53,12 +53,12 @@ class RolePolicy
 
     /**
      * Hapus role.
-     * (Opsional) Lindungi role tertentu seperti 'admin'.
+     * (Opsional) Lindungi role tertentu seperti 'Superadmin'.
      */
     public function delete(User $user, Role $role): bool
     {
-        // Lindungi role 'admin' agar tidak terhapus
-        if (strtolower($role->name) === 'admin') {
+        // Lindungi role 'Superadmin' agar tidak terhapus
+        if (strtolower($role->name) === 'Superadmin') {
             return false;
         }
 

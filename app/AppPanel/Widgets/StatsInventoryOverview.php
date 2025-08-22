@@ -6,12 +6,14 @@ use App\Models\Inventory\ProductVariant;
 use App\Models\Inventory\Invoice;
 use App\Models\Inventory\Transaction;
 use App\Models\Inventory\TransactionDetail;
+use App\Models\Inventory\WarehouseVariantStock;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Filament\Support\Icons\Heroicon;
 use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use RuntimeException;
@@ -20,97 +22,150 @@ class StatsInventoryOverview extends StatsOverviewWidget
 {
     protected ?string $heading = 'Ringkasan Inventory';
 
-    /**
-     * =======================
-     *  KONFIGURASI GLOBAL
-     * =======================
-     */
-    // Kandidat kolom stok di product_variants
-    protected array $stockColumnCandidates = ['stock', 'quantity', 'qty', 'stok'];
-    // Kandidat kolom min stock
+    // ======================= KONFIGURASI GLOBAL =======================
+    protected array $stockColumnCandidates    = ['stock', 'quantity', 'qty', 'stok'];
     protected array $minStockColumnCandidates = ['min_stock', 'minstok', 'minimum_stock', 'safety_stock'];
 
-    // Kolom total invoice
-    protected string $invoiceTotalCol = 'total_amount';
-    // Kolom total transaksi (jika ada)
+    protected string $invoiceTotalCol     = 'total_amount';
     protected string $transactionTotalCol = 'grand_total';
 
-    // Kolom tipe transaksi + nilai sale/purchase
-    protected string $trxTypeCol = 'type';
-    protected string $saleTypeVal = 'penjualan';
-    protected string $buyTypeVal = 'purchase';
+    protected string $trxTypeCol   = 'type';
+    protected string $saleTypeVal  = 'penjualan';
+    protected string $buyTypeVal   = 'purchase';
 
-    // ===== DETAIL TRANSAKSI =====
-    // Kandidat kolom QTY pada transaction_details
-    protected array $trxDetailQtyCandidates = ['quantity', 'qty', 'jumlah', 'qty_in', 'qty_out', 'kuantitas'];
-
-    // FK umum pada transaction_details
+    protected array $trxDetailQtyCandidates   = ['quantity', 'qty', 'jumlah', 'qty_in', 'qty_out', 'kuantitas'];
     protected array $trxDetailTrxFkCandidates = ['transaction_id', 'trx_id', 'transactions_id'];
     protected array $trxDetailVarFkCandidates = ['product_variant_id', 'variant_id', 'product_id'];
 
-    // Fallback threshold low-stock jika tidak ada min_stock
     protected int $lowStockThreshold = 5;
 
     protected function getStats(): array
     {
-        $today = Carbon::today();
+        [$user, $wid, $isSuperadmin] = $this->currentUserContext();
+
+        $today      = Carbon::today();
         $monthStart = $today->copy()->startOfMonth();
 
         // --- Resolve kolom stok & min stok pada product_variants ---
         [$stockCol, $minStockCol] = $this->resolveVariantStockColumns();
 
-        // --- Totals SKU ---
-        $totalSku = ProductVariant::count();
+        // =================== TOTAL SKU ===================
+        // Superadmin: semua varian. Non-superadmin: varian yang ada (stok on-hand > 0) di gudangnya
+        $totalSku = $isSuperadmin
+            ? ProductVariant::count()
+            : ProductVariant::query()
+                ->whereHas('stocks', function ($q) use ($wid) {
+                    $q->where('warehouse_id', $wid)
+                      ->whereRaw('(COALESCE(qty,0) - COALESCE(reserved_qty,0)) > 0');
+                })
+                ->count();
 
-        // --- Stok: langsung dari kolom atau dihitung dari transaksi ---
-        if ($stockCol) {
-            $totalStock = (int) ProductVariant::sum($stockCol);
-            $lowStockCount = $minStockCol
-                ? ProductVariant::whereColumn($stockCol, '<=', $minStockCol)->count()
-                : ProductVariant::where($stockCol, '<=', $this->lowStockThreshold)->count();
-            $outOfStockCount = ProductVariant::where($stockCol, '<=', 0)->count();
+        // =================== TOTAL STOK / LOW / OOS ===================
+        if ($isSuperadmin) {
+            // Tetap ikuti logika global lama
+            if ($stockCol) {
+                $totalStock     = (int) ProductVariant::sum($stockCol);
+                $lowStockCount  = $minStockCol
+                    ? ProductVariant::whereColumn($stockCol, '<=', $minStockCol)->count()
+                    : ProductVariant::where($stockCol, '<=', $this->lowStockThreshold)->count();
+                $outOfStockCount = ProductVariant::where($stockCol, '<=', 0)->count();
+            } else {
+                $variantStocks   = $this->computeVariantStocksFromTransactions();
+                $totalStock      = (int) $variantStocks->values()->sum();
+                $outOfStockCount = $variantStocks->filter(fn ($v) => ($v ?? 0) <= 0)->count();
+                if ($minStockCol) {
+                    $minMap = ProductVariant::select('id', $minStockCol)->get()->pluck($minStockCol, 'id');
+                    $lowStockCount = $variantStocks->filter(function ($stock, $id) use ($minMap) {
+                        $min = (int) ($minMap[$id] ?? 0);
+                        return $stock <= $min;
+                    })->count();
+                } else {
+                    $lowStockCount = $variantStocks->filter(fn ($v) => ($v ?? 0) <= $this->lowStockThreshold)->count();
+                }
+            }
         } else {
-            // Mode transaksi
-            $variantStocks = $this->computeVariantStocksFromTransactions(); // auto-detect qty/trx_id/variant_id
-            $totalStock = (int) $variantStocks->values()->sum();
-            $outOfStockCount = $variantStocks->filter(fn($v) => ($v ?? 0) <= 0)->count();
+            // Non-superadmin: hitung per-warehouse dari tabel stok per-gudang
+            $stockTable = (new WarehouseVariantStock)->getTable();
+
+            $totalStock = (int) DB::table($stockTable)
+                ->where('warehouse_id', $wid)
+                ->sum('qty');
+
+            $outOfStockCount = (int) DB::table($stockTable)
+                ->where('warehouse_id', $wid)
+                ->where('qty', '<=', 0)
+                ->count();
 
             if ($minStockCol) {
-                $minMap = ProductVariant::select('id', $minStockCol)->get()->pluck($minStockCol, 'id');
-                $lowStockCount = $variantStocks->filter(function ($stock, $id) use ($minMap) {
-                    $min = (int) ($minMap[$id] ?? 0);
-                    return $stock <= $min;
-                })->count();
+                // JOIN ke product_variants untuk bandingkan qty <= min_stock
+                $pvTable = (new ProductVariant)->getTable();
+                $lowStockCount = (int) DB::table("$pvTable as pv")
+                    ->leftJoin("$stockTable as s", function ($j) use ($wid) {
+                        $j->on('s.product_variant_id', '=', 'pv.id')
+                          ->where('s.warehouse_id', '=', $wid);
+                    })
+                    ->whereColumn('s.qty', '<=', "pv.$minStockCol")
+                    ->count('pv.id');
             } else {
-                $lowStockCount = $variantStocks->filter(fn($v) => ($v ?? 0) <= $this->lowStockThreshold)->count();
+                $lowStockCount = (int) DB::table($stockTable)
+                    ->where('warehouse_id', $wid)
+                    ->where('qty', '<=', $this->lowStockThreshold)
+                    ->count();
             }
         }
 
-        // --- Penjualan hari ini (Invoices) ---
-        $todaySales = (float) Invoice::whereDate('created_at', $today)->sum($this->invoiceTotalCol);
+        // =================== PENJUALAN HARI INI ===================
+        $invToday = Invoice::query()
+            ->when(!$isSuperadmin, function ($q) use ($wid) {
+                $q->whereHas('transaction', function ($t) use ($wid) {
+                    $t->where('source_warehouse_id', $wid)
+                      ->orWhere('destination_warehouse_id', $wid);
+                });
+            })
+            ->whereDate('created_at', $today);
 
-        // --- Omzet bulan ini (Transactions sale → fallback Invoices) ---
-        $monthlyRevenue = (float) Transaction::where($this->trxTypeCol, $this->saleTypeVal)
-            ->whereBetween('created_at', [$monthStart, $today->copy()->endOfDay()])
-            ->sum($this->transactionTotalCol);
+        $todaySales = (float) $invToday->sum($this->invoiceTotalCol);
+
+        // =================== OMZET BULAN INI ===================
+        $trxMonthly = Transaction::query()
+            ->where($this->trxTypeCol, $this->saleTypeVal)
+            ->when(!$isSuperadmin, function ($q) use ($wid) {
+                $q->where(function ($qq) use ($wid) {
+                    $qq->where('source_warehouse_id', $wid)
+                       ->orWhere('destination_warehouse_id', $wid);
+                });
+            })
+            ->whereBetween('created_at', [$monthStart, $today->copy()->endOfDay()]);
+
+        $monthlyRevenue = (float) $trxMonthly->sum($this->transactionTotalCol);
 
         if ($monthlyRevenue <= 0) {
-            $monthlyRevenue = (float) Invoice::whereBetween('created_at', [$monthStart, $today->copy()->endOfDay()])
-                ->sum($this->invoiceTotalCol);
+            $invMonthly = Invoice::query()
+                ->when(!$isSuperadmin, function ($q) use ($wid) {
+                    $q->whereHas('transaction', function ($t) use ($wid) {
+                        $t->where('source_warehouse_id', $wid)
+                          ->orWhere('destination_warehouse_id', $wid);
+                    });
+                })
+                ->whereBetween('created_at', [$monthStart, $today->copy()->endOfDay()]);
+
+            $monthlyRevenue = (float) $invMonthly->sum($this->invoiceTotalCol);
         }
 
-        // --- Sparkline & tren 7 hari (Invoices) ---
-        [$sparkline, $lastWeekSum, $prevWeekSum] = $this->salesSparkline(7);
-        [$trendDesc, $trendColor, $trendIcon] = $this->trendMeta($lastWeekSum, $prevWeekSum);
+        // =================== SPARKLINE & TREN 7 HARI ===================
+        [$sparkline, $lastWeekSum, $prevWeekSum] = $this->salesSparkline(7, $isSuperadmin ? null : $wid);
+        [$trendDesc, $trendColor, $trendIcon]    = $this->trendMeta($lastWeekSum, $prevWeekSum);
 
         return [
             Stat::make('Total SKU', number_format($totalSku))
-                ->description('Jumlah varian aktif')
+                ->description($isSuperadmin ? 'Semua varian' : 'Varian tersedia di gudang Anda')
                 ->descriptionIcon('heroicon-o-cube')
                 ->color('info'),
 
             Stat::make('Total Stok', number_format($totalStock))
-                ->description($stockCol ? "Dari kolom `{$stockCol}`" : 'Dihitung dari transaksi')
+                ->description($isSuperadmin
+                    ? ($stockCol ? "Dari kolom `{$stockCol}`" : 'Dihitung dari transaksi')
+                    : 'Akumulasi stok di gudang Anda')
                 ->descriptionIcon('heroicon-o-cube')
                 ->color('success'),
 
@@ -119,8 +174,8 @@ class StatsInventoryOverview extends StatsOverviewWidget
                 ->descriptionIcon('heroicon-o-bell-alert')
                 ->color($lowStockCount > 0 ? 'warning' : 'success'),
 
-            Stat::make('Diluar stok', number_format($outOfStockCount))
-                ->description('Habis / tidak tersedia')
+            Stat::make('Di luar Stok', number_format($outOfStockCount))
+                ->description($isSuperadmin ? 'Global' : 'Berdasar gudang Anda')
                 ->descriptionIcon('heroicon-o-no-symbol')
                 ->color($outOfStockCount > 0 ? 'danger' : 'success'),
 
@@ -131,88 +186,65 @@ class StatsInventoryOverview extends StatsOverviewWidget
 
             Stat::make('Omzet Bulan Ini', $this->money($monthlyRevenue))
                 ->description($trendDesc)
-                ->descriptionIcon($trendIcon) // sudah string 'heroicon-m-arrow-trending-up/down'
+                ->descriptionIcon($trendIcon)
                 ->color($trendColor)
                 ->chart($sparkline),
         ];
     }
 
-    /**
-     * Pilih kolom stok & min stok yang tersedia pada tabel product_variants.
-     */
+    /** ======================= Helper: user/warehouse context ======================= */
+    protected function currentUserContext(): array
+    {
+        $user = Auth::user();
+        $wid  = (int) ($user->warehouse_id ?? 0);
+        $isSuperadmin = $user && method_exists($user, 'hasRole') && $user->hasRole('Superadmin');
+        return [$user, $wid, $isSuperadmin];
+    }
+
+    /** ======================= Kolom stok/min stok di product_variants ======================= */
     protected function resolveVariantStockColumns(): array
     {
         $table = (new ProductVariant)->getTable();
 
         $stockCol = collect($this->stockColumnCandidates)
-            ->first(fn($c) => Schema::hasColumn($table, $c)) ?: null;
+            ->first(fn ($c) => Schema::hasColumn($table, $c)) ?: null;
 
         $minCol = collect($this->minStockColumnCandidates)
-            ->first(fn($c) => Schema::hasColumn($table, $c)) ?: null;
+            ->first(fn ($c) => Schema::hasColumn($table, $c)) ?: null;
 
         return [$stockCol, $minCol];
     }
 
-    /**
-     * Resolve kolom qty & foreign keys pada transaction_details.
-     */
+    /** ======================= Resolve kolom detail trx ======================= */
     protected function resolveDetailColumns(): array
     {
         $detailTable = (new TransactionDetail)->getTable();
-        $trxTable = (new Transaction)->getTable();
+        $trxTable    = (new Transaction)->getTable();
 
-        $qtyCol = collect($this->trxDetailQtyCandidates)
-            ->first(fn($c) => Schema::hasColumn($detailTable, $c));
-
-        $trxFk = collect($this->trxDetailTrxFkCandidates)
-            ->first(fn($c) => Schema::hasColumn($detailTable, $c));
-
-        $varFk = collect($this->trxDetailVarFkCandidates)
-            ->first(fn($c) => Schema::hasColumn($detailTable, $c));
+        $qtyCol = collect($this->trxDetailQtyCandidates)->first(fn ($c) => Schema::hasColumn($detailTable, $c));
+        $trxFk  = collect($this->trxDetailTrxFkCandidates)->first(fn ($c) => Schema::hasColumn($detailTable, $c));
+        $varFk  = collect($this->trxDetailVarFkCandidates)->first(fn ($c) => Schema::hasColumn($detailTable, $c));
 
         if (!$qtyCol) {
             $cols = Schema::getColumnListing($detailTable);
-            throw new RuntimeException(
-                "Tidak menemukan kolom qty di `{$detailTable}`. Kandidat dicek: " .
-                implode(', ', $this->trxDetailQtyCandidates) .
-                '. Kolom yang ada: ' . implode(', ', $cols)
-            );
+            throw new RuntimeException("Tidak menemukan kolom qty di `{$detailTable}`. Kandidat: " . implode(', ', $this->trxDetailQtyCandidates) . '. Kolom: ' . implode(', ', $cols));
         }
         if (!$trxFk) {
             $cols = Schema::getColumnListing($detailTable);
-            throw new RuntimeException(
-                "Tidak menemukan FK transaksi di `{$detailTable}`. Kandidat: " .
-                implode(', ', $this->trxDetailTrxFkCandidates) .
-                '. Kolom yang ada: ' . implode(', ', $cols)
-            );
+            throw new RuntimeException("Tidak menemukan FK transaksi di `{$detailTable}`. Kandidat: " . implode(', ', $this->trxDetailTrxFkCandidates) . '. Kolom: ' . implode(', ', $cols));
         }
         if (!$varFk) {
             $cols = Schema::getColumnListing($detailTable);
-            throw new RuntimeException(
-                "Tidak menemukan FK variant di `{$detailTable}`. Kandidat: " .
-                implode(', ', $this->trxDetailVarFkCandidates) .
-                '. Kolom yang ada: ' . implode(', ', $cols)
-            );
+            throw new RuntimeException("Tidak menemukan FK variant di `{$detailTable}`. Kandidat: " . implode(', ', $this->trxDetailVarFkCandidates) . '. Kolom: ' . implode(', ', $cols));
         }
 
         return [$detailTable, $trxTable, $qtyCol, $trxFk, $varFk];
     }
 
-    /**
-     * Hitung stok per variant dari transaksi:
-     * stock = SUM(qty purchase) - SUM(qty sale)
-     * return: Collection<variant_id => stock_int>
-     */
+    /** ======================= Stok varian (global) dari transaksi ======================= */
     protected function computeVariantStocksFromTransactions(): Collection
     {
         [$detailTable, $trxTable, $qtyCol, $trxFk, $varFk] = $this->resolveDetailColumns();
-
-        // SELECT d.{varFk} AS variant_id,
-        //   SUM(CASE WHEN t.type='purchase' THEN d.{qtyCol} ELSE 0 END)
-        // - SUM(CASE WHEN t.type='sale'     THEN d.{qtyCol} ELSE 0 END) AS stock
-        // FROM {detailTable} d
-        // JOIN {trxTable} t ON t.id = d.{trxFk}
-        // GROUP BY d.{varFk}
 
         $rows = DB::table($detailTable . ' as d')
             ->join($trxTable . ' as t', "t.id", '=', "d.{$trxFk}")
@@ -227,34 +259,44 @@ class StatsInventoryOverview extends StatsOverviewWidget
             ->groupBy("d.{$varFk}")
             ->pluck('stock', 'variant_id');
 
-        return $rows->map(fn($v) => (int) $v);
+        return $rows->map(fn ($v) => (int) $v);
     }
 
-    /**
-     * Sparkline 7 hari terakhir dari Invoices.
-     * return: [series<float>, lastWeekSum<float>, prevWeekSum<float>]
-     */
-    protected function salesSparkline(int $days): array
+    /** ======================= Sparkline Invoices, support filter warehouse ======================= */
+    protected function salesSparkline(int $days, ?int $wid = null): array
     {
-        $end = Carbon::today();
+        $end   = Carbon::today();
         $start = $end->copy()->subDays($days - 1);
         $period = CarbonPeriod::create($start, $end);
 
-        $rows = Invoice::selectRaw('DATE(created_at) as d, SUM(' . $this->invoiceTotalCol . ') as s')
+        $rowsQuery = Invoice::selectRaw('DATE(created_at) as d, SUM(' . $this->invoiceTotalCol . ') as s')
             ->whereBetween('created_at', [$start->startOfDay(), $end->endOfDay()])
-            ->groupBy('d')
-            ->pluck('s', 'd');
+            ->when($wid, function ($q) use ($wid) {
+                $q->whereHas('transaction', function ($t) use ($wid) {
+                    $t->where('source_warehouse_id', $wid)
+                      ->orWhere('destination_warehouse_id', $wid);
+                });
+            })
+            ->groupBy('d');
+
+        $rows = $rowsQuery->pluck('s', 'd');
 
         $series = [];
         foreach ($period as $date) {
             $series[] = (float) ($rows[$date->toDateString()] ?? 0);
         }
 
-        // Bandingkan 7 hari sebelumnya
+        // Bandingkan dengan 7 hari sebelumnya (ikut filter warehouse)
         $prevStart = $start->copy()->subDays($days);
-        $prevEnd = $start->copy()->subDay();
+        $prevEnd   = $start->copy()->subDay();
 
-        $prevSum = (float) Invoice::whereBetween('created_at', [$prevStart->startOfDay(), $prevEnd->endOfDay()])
+        $prevSum = (float) Invoice::when($wid, function ($q) use ($wid) {
+                $q->whereHas('transaction', function ($t) use ($wid) {
+                    $t->where('source_warehouse_id', $wid)
+                      ->orWhere('destination_warehouse_id', $wid);
+                });
+            })
+            ->whereBetween('created_at', [$prevStart->startOfDay(), $prevEnd->endOfDay()])
             ->sum($this->invoiceTotalCol);
 
         $lastSum = array_sum($series);

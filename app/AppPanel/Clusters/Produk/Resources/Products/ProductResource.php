@@ -14,19 +14,24 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Illuminate\Support\Facades\Auth;
 
 class ProductResource extends Resource
 {
     protected static ?string $model = Product::class;
-
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedClipboardDocumentList;
-
     protected static ?string $cluster = ProdukCluster::class;
-
     protected static ?string $recordTitleAttribute = 'Produk';
     protected static ?string $modelLabel = 'Produk';
     protected static ?string $navigationLabel = 'Produk';
-
+    public static function shouldRegisterNavigation(): bool
+    {
+        $user = Auth::user();
+        if (!$user) {
+            return false;
+        }
+        return $user->hasAnyPermission(['viewAny-product', 'view-product']);
+    }
     public static function form(Schema $schema): Schema
     {
         return ProductForm::configure($schema);

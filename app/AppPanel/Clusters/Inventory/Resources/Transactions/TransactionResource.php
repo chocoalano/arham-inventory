@@ -14,18 +14,23 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Illuminate\Support\Facades\Auth;
 
 class TransactionResource extends Resource
 {
     protected static ?string $model = Transaction::class;
-
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedShoppingBag;
-
     protected static ?string $cluster = InventoryCluster::class;
-
     protected static ?string $modelLabel = 'Transaksi';
     protected static ?string $navigationLabel = 'Transaksi';
-
+    public static function shouldRegisterNavigation(): bool
+    {
+        $user = Auth::user();
+        if (!$user) {
+            return false;
+        }
+        return $user->hasAnyPermission(['viewAny-transaction', 'view-transaction']);
+    }
     public static function form(Schema $schema): Schema
     {
         return TransactionForm::configure($schema);

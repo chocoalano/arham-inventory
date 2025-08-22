@@ -8,11 +8,11 @@ use App\Models\User;
 class InvoicePolicy
 {
     /**
-     * Admin bypass semua ability.
+     * Superadmin bypass semua ability.
      */
     public function before(User $user, string $ability): ?bool
     {
-        if ($user->hasAnyRole(['admin'])) {
+        if ($user->hasAnyRole(['Superadmin'])) {
             return true;
         }
 

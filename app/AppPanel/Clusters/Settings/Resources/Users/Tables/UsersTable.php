@@ -2,8 +2,11 @@
 
 namespace App\AppPanel\Clusters\Settings\Resources\Users\Tables;
 
+use App\AppPanel\Clusters\Settings\Resources\Users\UserResource;
 use App\Models\User;
+use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\ForceDeleteBulkAction;
 use Filament\Actions\RestoreBulkAction;
@@ -24,12 +27,17 @@ use Filament\Tables\Filters\TrashedFilter;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\DatePicker;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Auth;
 
 class UsersTable
 {
     public static function configure(Table $table): Table
     {
+        $query = Auth::user()->hasRole('Superadmin')
+            ? User::query()
+            : User::where('warehouse_id', Auth::user()->warehouse_id);
         return $table
+            ->query($query)
             ->defaultSort('created_at', 'desc')
             ->columns([
                 TextColumn::make('name')
@@ -61,6 +69,12 @@ class UsersTable
                     ->label('Roles')
                     ->separator(', ')
                     ->limitList(3)
+                    ->toggleable(),
+
+                TextColumn::make('warehouse.name')
+                    ->label('Area Penugasan')
+                    ->searchable()
+                    ->sortable()
                     ->toggleable(),
 
                 TextColumn::make('created_at')
@@ -140,9 +154,15 @@ class UsersTable
             ])
 
             ->recordActions([
+                Action::make('activities')
+                    ->label('Aktivitas')
+                    ->icon('heroicon-m-clock')
+                    ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin'))
+                    ->url(fn($record) => UserResource::getUrl('activities', ['record' => $record])),
                 ViewAction::make(),
                 EditAction::make()
                     ->visible(fn(): bool => auth()->user()?->can('update', User::class) ?? true),
+                DeleteAction::make(),
             ])
 
             ->bulkActions([

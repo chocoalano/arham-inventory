@@ -28,24 +28,30 @@ use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Auth;
 
 class PaymentResource extends Resource
 {
     protected static ?string $model = Payment::class;
-
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedBanknotes;
-
     protected static ?string $cluster = InventoryCluster::class;
     protected static ?string $modelLabel = 'Pembayaran Penjualan';
     protected static ?string $navigationLabel = 'Pembayaran Penjualan';
-
+    public static function shouldRegisterNavigation(): bool
+    {
+        $user = Auth::user();
+        if (!$user) {
+            return false;
+        }
+        return $user->hasAnyPermission(['viewAny-payment', 'view-payment']);
+    }
     public static function form(Schema $schema): Schema
     {
         return $schema
             ->components([
                 Section::make('Pembayaran')->columns(2)->schema([
                     Select::make('invoice_id')->label('Invoice')
-                        ->options(fn() => Invoice::query()
+                        ->options(fn() => Invoice::forUser(Auth::user())
                             ->orderByDesc('issued_at')->pluck('invoice_number', 'id'))
                         ->searchable()->preload()->required()
                         ->live() // Kunci: Membuat field ini "hidup"
@@ -85,7 +91,10 @@ class PaymentResource extends Resource
 
     public static function table(Table $table): Table
     {
+        $query = Payment::forUser(Auth::user())
+            ->with(['invoice.transaction', 'receiver']);
         return $table
+            ->query($query)
             ->columns([
                 TextColumn::make('invoice.invoice_number')
                     ->label('Nomor Invoice')
