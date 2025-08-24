@@ -2,23 +2,23 @@
 
 namespace App\AppPanel\Clusters\Settings\Resources\Roles;
 
+use App\AppPanel\Clusters\Settings\Resources\Roles\Pages\ListRoleActivities;
 use App\AppPanel\Clusters\Settings\Resources\Roles\Pages\ManageRoles;
 use App\AppPanel\Clusters\Settings\SettingsCluster;
 use App\Models\RBAC\Permission;
 use App\Models\RBAC\Role;
 use BackedEnum;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
-use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Fieldset;
-use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Enums\Width;
@@ -89,93 +89,103 @@ class RoleResource extends Resource
                 //
             ])
             ->recordActions([
-                Action::make('akses')
-                    ->label('Atur Akses')
-                    ->modalWidth(Width::FiveExtraLarge)
-                    ->modalHeading('Atur Hak Akses untuk Peran')
-                    ->modalSubmitActionLabel('Simpan Perubahan')
-                    ->mountUsing(function (Schema $form, Model $record) {
-                        // semua permission yang dimiliki role ini
-                        $selectedIds = $record->permissions()->pluck('id')->map(fn($id) => (string) $id);
+                ActionGroup::make([
+                    Action::make('activities')
+                        ->label('Aktivitas')
+                        ->icon('heroicon-m-clock')
+                        ->color('primary')
+                        ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin'))
+                        ->url(fn($record) => RoleResource::getUrl('activities', ['record' => $record])),
+                    Action::make('akses')
+                        ->label('Atur Akses')
+                        ->icon('heroicon-o-tag')
+                        ->color('primary')
+                        ->modalWidth(Width::FiveExtraLarge)
+                        ->modalHeading('Atur Hak Akses untuk Peran')
+                        ->modalSubmitActionLabel('Simpan Perubahan')
+                        ->mountUsing(function (Schema $form, Model $record) {
+                            // semua permission yang dimiliki role ini
+                            $selectedIds = $record->permissions()->pluck('id')->map(fn($id) => (string) $id);
 
-                        // kelompokkan permission berdasarkan label grup
-                        $grouped = Permission::with('group')
-                            ->orderBy('permission_group_id')
-                            ->orderBy('label')
-                            ->get()
-                            ->groupBy(fn($p) => $p->group?->label ?? 'Lainnya');
+                            // kelompokkan permission berdasarkan label grup
+                            $grouped = Permission::with('group')
+                                ->orderBy('permission_group_id')
+                                ->orderBy('label')
+                                ->get()
+                                ->groupBy(fn($p) => $p->group?->label ?? 'Lainnya');
 
-                        $state = ['permissions_by_group' => []];
+                            $state = ['permissions_by_group' => []];
 
-                        foreach ($grouped as $groupLabel => $perms) {
-                            $groupKey = Str::slug($groupLabel);
-                            $idsInGrp = $perms->pluck('id')->map(fn($id) => (string) $id);
+                            foreach ($grouped as $groupLabel => $perms) {
+                                $groupKey = Str::slug($groupLabel);
+                                $idsInGrp = $perms->pluck('id')->map(fn($id) => (string) $id);
 
-                            // simpan hanya yang termasuk group ini
-                            $state['permissions_by_group'][$groupKey] = $selectedIds
-                                ->intersect($idsInGrp)
+                                // simpan hanya yang termasuk group ini
+                                $state['permissions_by_group'][$groupKey] = $selectedIds
+                                    ->intersect($idsInGrp)
+                                    ->values()
+                                    ->all();
+                            }
+
+                            $form->fill($state);
+                        })
+
+                        ->form(function (Model $record) {
+                            // build schema (tanpa set state lagi)
+                            $grouped = Permission::with('group')
+                                ->orderBy('permission_group_id')
+                                ->orderBy('label')
+                                ->get()
+                                ->groupBy(fn($p) => $p->group?->label ?? 'Lainnya');
+
+                            $schemas = [];
+
+                            foreach ($grouped as $groupLabel => $perms) {
+                                $groupKey = Str::slug($groupLabel);
+                                $options = $perms->pluck('label', 'id')
+                                    ->mapWithKeys(fn($label, $id) => [(string) $id => $label])
+                                    ->toArray();
+
+                                $schemas[] = Fieldset::make($groupLabel)
+                                    ->schema([
+                                        CheckboxList::make("permissions_by_group.$groupKey")
+                                            ->options($options)
+                                            ->columns(2)
+                                            ->bulkToggleable(),
+                                    ])
+                                    ->columns(1);
+                            }
+
+                            return [
+                                Section::make('Daftar Hak Akses')
+                                    ->description('Pilih izin yang akan diberikan kepada peran ini.')
+                                    ->schema($schemas)
+                                    ->columns([
+                                        'default' => 1,
+                                        'sm' => 2,
+                                        'md' => 2,
+                                        'lg' => 3,
+                                        'xl' => 2,
+                                        '2xl' => 2,
+                                    ]),
+                            ];
+                        })
+
+                        ->action(function (Model $record, array $data) {
+                            // gabungkan semua pilihan dari tiap group
+                            $selected = collect($data['permissions_by_group'] ?? [])
+                                ->flatten()
+                                ->filter()
+                                ->unique()
+                                ->map(fn($id) => (int) $id) // kembalikan ke int sebelum sync
                                 ->values()
                                 ->all();
-                        }
 
-                        $form->fill($state);
-                    })
-
-                    ->form(function (Model $record) {
-                        // build schema (tanpa set state lagi)
-                        $grouped = Permission::with('group')
-                            ->orderBy('permission_group_id')
-                            ->orderBy('label')
-                            ->get()
-                            ->groupBy(fn($p) => $p->group?->label ?? 'Lainnya');
-
-                        $schemas = [];
-
-                        foreach ($grouped as $groupLabel => $perms) {
-                            $groupKey = Str::slug($groupLabel);
-                            $options = $perms->pluck('label', 'id')
-                                ->mapWithKeys(fn($label, $id) => [(string) $id => $label])
-                                ->toArray();
-
-                            $schemas[] = Fieldset::make($groupLabel)
-                                ->schema([
-                                    CheckboxList::make("permissions_by_group.$groupKey")
-                                        ->options($options)
-                                        ->columns(2)
-                                        ->bulkToggleable(),
-                                ])
-                                ->columns(1);
-                        }
-
-                        return [
-                            Section::make('Daftar Hak Akses')
-                                ->description('Pilih izin yang akan diberikan kepada peran ini.')
-                                ->schema($schemas)
-                                ->columns([
-                                    'default' => 1,
-                                    'sm' => 2,
-                                    'md' => 2,
-                                    'lg' => 3,
-                                    'xl' => 2,
-                                    '2xl' => 2,
-                                ]),
-                        ];
-                    })
-
-                    ->action(function (Model $record, array $data) {
-                        // gabungkan semua pilihan dari tiap group
-                        $selected = collect($data['permissions_by_group'] ?? [])
-                            ->flatten()
-                            ->filter()
-                            ->unique()
-                            ->map(fn($id) => (int) $id) // kembalikan ke int sebelum sync
-                            ->values()
-                            ->all();
-
-                        $record->permissions()->sync($selected);
-                    }),
-                EditAction::make(),
-                DeleteAction::make(),
+                            $record->permissions()->sync($selected);
+                        }),
+                    EditAction::make(),
+                    DeleteAction::make(),
+                ])
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
@@ -188,6 +198,7 @@ class RoleResource extends Resource
     {
         return [
             'index' => ManageRoles::route('/'),
+            'activities' => ListRoleActivities::route('/{record}/activities'),
         ];
     }
 }

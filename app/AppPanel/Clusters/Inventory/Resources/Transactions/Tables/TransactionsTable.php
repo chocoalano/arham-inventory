@@ -2,7 +2,10 @@
 
 namespace App\AppPanel\Clusters\Inventory\Resources\Transactions\Tables;
 
+use App\AppPanel\Clusters\Inventory\Resources\Transactions\TransactionResource;
 use App\Models\Inventory\Transaction;
+use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
@@ -84,61 +87,69 @@ class TransactionsTable
                     }),
             ])
             ->recordActions([
-                ViewAction::make()
-                    ->modalHeading('Detail Transaksi')
-                    ->modalWidth(Width::Full)
-                    ->mutateRecordDataUsing(function (array $data, Transaction $record): array {
-                        // Eager load relasi yang dibutuhkan untuk tampilan
-                        $record->loadMissing([
-                            'details',
-                            'sourceWarehouse',
-                            'destinationWarehouse',
-                            'supplier',
-                            'creator',
-                            'invoice',
-                            // Sesuaikan dengan nama relasi movement Anda:
-                            // 'movements', // atau 'inventoryMovements'
-                        ]);
+                ActionGroup::make([
+                    Action::make('activities')
+                        ->label('Aktivitas')
+                        ->icon('heroicon-m-clock')
+                        ->color('primary')
+                        ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin'))
+                        ->url(fn($record) => TransactionResource::getUrl('activities', ['record' => $record])),
+                    ViewAction::make()
+                        ->modalHeading('Detail Transaksi')
+                        ->modalWidth(Width::Full)
+                        ->mutateRecordDataUsing(function (array $data, Transaction $record): array {
+                            // Eager load relasi yang dibutuhkan untuk tampilan
+                            $record->loadMissing([
+                                'details',
+                                'sourceWarehouse',
+                                'destinationWarehouse',
+                                'supplier',
+                                'creator',
+                                'invoice',
+                                // Sesuaikan dengan nama relasi movement Anda:
+                                // 'movements', // atau 'inventoryMovements'
+                            ]);
 
-                        // Mapping details -> array datar untuk Repeater
-                        $data['details'] = $record->details
-                            ->map(function ($d) use ($record) {
-                            return [
-                                'warehouse_id' => (int) ($d->warehouse_id
-                                    ?? $record->source_warehouse_id
-                                    ?? $record->destination_warehouse_id),
-                                'product_id' => (int) $d->product_id,
-                                'product_variant_id' => (int) $d->product_variant_id,
-                                'qty' => (int) $d->qty,
-                                'price' => (int) ($d->price ?? 0),
-                                'discount_amount' => (int) ($d->discount_amount ?? 0),
-                                'line_total' => (int) ($d->line_total ?? ((int) ($d->price ?? 0) * (int) ($d->qty ?? 0))),
-                            ];
+                            // Mapping details -> array datar untuk Repeater
+                            $data['details'] = $record->details
+                                ->map(function ($d) use ($record) {
+                                return [
+                                    'warehouse_id' => (int) ($d->warehouse_id
+                                        ?? $record->source_warehouse_id
+                                        ?? $record->destination_warehouse_id),
+                                    'product_id' => (int) $d->product_id,
+                                    'product_variant_id' => (int) $d->product_variant_id,
+                                    'qty' => (int) $d->qty,
+                                    'price' => (int) ($d->price ?? 0),
+                                    'discount_amount' => (int) ($d->discount_amount ?? 0),
+                                    'line_total' => (int) ($d->line_total ?? ((int) ($d->price ?? 0) * (int) ($d->qty ?? 0))),
+                                ];
+                            })
+                                ->values()
+                                ->all();
+
+                            // Sinkronkan field header – penting agar rules visible/dehydrate di form tetap benar
+                            $data['reference_number'] = $record->reference_number;
+                            $data['type'] = $record->type;
+                            $data['transaction_date'] = $record->transaction_date;
+                            $data['source_warehouse_id'] = $record->source_warehouse_id;
+                            $data['destination_warehouse_id'] = in_array($record->type, ['pemindahan', 'pengembalian', 'penyesuaian'])
+                                ? $record->destination_warehouse_id
+                                : null;
+
+                            // Field pelanggan hanya relevan saat penjualan (biar komponen visible() kamu bekerja mulus)
+                            $isSale = $record->type === 'penjualan';
+                            $data['customer_name'] = $isSale ? $record->customer_name : null;
+                            $data['customer_phone'] = $isSale ? $record->customer_phone : null;
+                            $data['customer_full_address'] = $isSale ? $record->customer_full_address : null;
+
+                            $data['remarks'] = $record->remarks;
+
+                            return $data;
                         })
-                            ->values()
-                            ->all();
-
-                        // Sinkronkan field header – penting agar rules visible/dehydrate di form tetap benar
-                        $data['reference_number'] = $record->reference_number;
-                        $data['type'] = $record->type;
-                        $data['transaction_date'] = $record->transaction_date;
-                        $data['source_warehouse_id'] = $record->source_warehouse_id;
-                        $data['destination_warehouse_id'] = in_array($record->type, ['pemindahan', 'pengembalian', 'penyesuaian'])
-                            ? $record->destination_warehouse_id
-                            : null;
-
-                        // Field pelanggan hanya relevan saat penjualan (biar komponen visible() kamu bekerja mulus)
-                        $isSale = $record->type === 'penjualan';
-                        $data['customer_name'] = $isSale ? $record->customer_name : null;
-                        $data['customer_phone'] = $isSale ? $record->customer_phone : null;
-                        $data['customer_full_address'] = $isSale ? $record->customer_full_address : null;
-
-                        $data['remarks'] = $record->remarks;
-
-                        return $data;
-                    })
-                    ->modalWidth(Width::Full),
-                DeleteAction::make(),
+                        ->modalWidth(Width::Full),
+                    DeleteAction::make(),
+                ])
             ])
             ->toolbarActions([
                 BulkActionGroup::make([

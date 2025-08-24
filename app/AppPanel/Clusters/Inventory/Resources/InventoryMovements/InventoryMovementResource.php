@@ -3,6 +3,7 @@
 namespace App\AppPanel\Clusters\Inventory\Resources\InventoryMovements;
 
 use App\AppPanel\Clusters\Inventory\InventoryCluster;
+use App\AppPanel\Clusters\Inventory\Resources\InventoryMovements\Pages\ManageInventoryActivities;
 use App\AppPanel\Clusters\Inventory\Resources\InventoryMovements\Pages\ManageInventoryMovements;
 use App\AppPanel\Clusters\Inventory\Resources\InventoryMovements\Widgets\InventoryStats;
 use App\Models\Inventory\InventoryMovement;
@@ -280,7 +281,12 @@ class InventoryMovementResource extends Resource
             ])
             ->recordActions([
                 ActionGroup::make([
-                    // Label 'Cetak resi' sudah benar
+                    Action::make('activities')
+                        ->label('Aktivitas')
+                        ->icon('heroicon-m-clock')
+                        ->color('primary')
+                        ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin'))
+                        ->url(fn($record): string => InventoryMovementResource::getUrl('activities', ['record' => $record])),
                     Action::make('cetak_resi')
                         ->label('Cetak Packing Slip')
                         ->url(fn($record): string => route('inventory.cetak-resi', ['id' => $record->id]))
@@ -311,6 +317,7 @@ class InventoryMovementResource extends Resource
     {
         return [
             'index' => ManageInventoryMovements::route('/'),
+            'activities' => ManageInventoryActivities::route('/{record}/activities'),
         ];
     }
 }

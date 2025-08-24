@@ -7,6 +7,7 @@ use App\AppPanel\Clusters\Settings\Resources\Users\Pages\EditUser;
 use App\AppPanel\Clusters\Settings\Resources\Users\Pages\ListOrderActivities;
 use App\AppPanel\Clusters\Settings\Resources\Users\Pages\ListUsers;
 use App\AppPanel\Clusters\Settings\Resources\Users\Pages\ViewUser;
+use App\AppPanel\Clusters\Settings\Resources\Users\RelationManagers\LogRelationManager;
 use App\AppPanel\Clusters\Settings\Resources\Users\Schemas\UserForm;
 use App\AppPanel\Clusters\Settings\Resources\Users\Schemas\UserInfolist;
 use App\AppPanel\Clusters\Settings\Resources\Users\Tables\UsersTable;
@@ -53,9 +54,10 @@ class UserResource extends Resource
     public static function getRelations(): array
     {
         return [
-            //
+            LogRelationManager::class,
         ];
     }
+
 
     public static function getPages(): array
     {

@@ -2,7 +2,10 @@
 
 namespace App\AppPanel\Clusters\Produk\Resources\ProductVariants\Tables;
 
+use App\AppPanel\Clusters\Produk\Resources\ProductVariants\ProductVariantResource;
 use App\Models\Inventory\ProductVariant;
+use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Tables\Table;
@@ -132,68 +135,76 @@ class ProductVariantsTable
             ])
 
             ->recordActions([
-                // === EDIT ===
-                EditAction::make()
-                    ->label('Edit')
-                    // Nonaktifkan tombol kalau sudah ada transaksi (UX jelas)
-                    ->disabled(fn(ProductVariant $record) => $record->transactions()->exists())
-                    ->tooltip(
-                        fn(ProductVariant $record) =>
-                        $record->transactions()->exists()
-                        ? 'Varian ini sudah memiliki transaksi dan tidak bisa diedit.'
-                        : null
-                    )
-                    // Validasi server-side saat submit
-                    ->action(function (ProductVariant $record, array $data, EditAction $action) {
-                        if ($record->transactions()->exists()) {
+                ActionGroup::make([
+                    Action::make('activities')
+                        ->label('Aktivitas')
+                        ->icon('heroicon-m-clock')
+                        ->color('primary')
+                        ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin'))
+                        ->url(fn($record) => ProductVariantResource::getUrl('activities', ['record' => $record])),
+                    // === EDIT ===
+                    EditAction::make()
+                        ->label('Edit')
+                        // Nonaktifkan tombol kalau sudah ada transaksi (UX jelas)
+                        ->disabled(fn(ProductVariant $record) => $record->transactions()->exists())
+                        ->tooltip(
+                            fn(ProductVariant $record) =>
+                            $record->transactions()->exists()
+                            ? 'Varian ini sudah memiliki transaksi dan tidak bisa diedit.'
+                            : null
+                        )
+                        // Validasi server-side saat submit
+                        ->action(function (ProductVariant $record, array $data, EditAction $action) {
+                            if ($record->transactions()->exists()) {
+                                Notification::make()
+                                    ->title('Tidak bisa diedit')
+                                    ->body('Varian ini sudah memiliki transaksi.')
+                                    ->danger()
+                                    ->send();
+
+                                $action->halt();
+                                return;
+                            }
+
+                            $record->update($data);
+
                             Notification::make()
-                                ->title('Tidak bisa diedit')
-                                ->body('Varian ini sudah memiliki transaksi.')
-                                ->danger()
+                                ->title('Varian diperbarui')
+                                ->success()
                                 ->send();
+                        }),
 
-                            $action->halt();
-                            return;
-                        }
+                    // === DELETE (row) ===
+                    DeleteAction::make()
+                        ->label('Hapus')
+                        ->requiresConfirmation()
+                        ->disabled(fn(ProductVariant $record) => $record->transactions()->exists())
+                        ->tooltip(
+                            fn(ProductVariant $record) =>
+                            $record->transactions()->exists()
+                            ? 'Varian ini sudah memiliki transaksi dan tidak bisa dihapus.'
+                            : null
+                        )
+                        ->action(function (ProductVariant $record, DeleteAction $action) {
+                            if ($record->transactions()->exists()) {
+                                Notification::make()
+                                    ->title('Tidak bisa dihapus')
+                                    ->body('Varian ini sudah memiliki transaksi.')
+                                    ->danger()
+                                    ->send();
 
-                        $record->update($data);
+                                $action->halt();
+                                return;
+                            }
 
-                        Notification::make()
-                            ->title('Varian diperbarui')
-                            ->success()
-                            ->send();
-                    }),
+                            $record->delete();
 
-                // === DELETE (row) ===
-                DeleteAction::make()
-                    ->label('Hapus')
-                    ->requiresConfirmation()
-                    ->disabled(fn(ProductVariant $record) => $record->transactions()->exists())
-                    ->tooltip(
-                        fn(ProductVariant $record) =>
-                        $record->transactions()->exists()
-                        ? 'Varian ini sudah memiliki transaksi dan tidak bisa dihapus.'
-                        : null
-                    )
-                    ->action(function (ProductVariant $record, DeleteAction $action) {
-                        if ($record->transactions()->exists()) {
                             Notification::make()
-                                ->title('Tidak bisa dihapus')
-                                ->body('Varian ini sudah memiliki transaksi.')
-                                ->danger()
+                                ->title('Varian dihapus')
+                                ->success()
                                 ->send();
-
-                            $action->halt();
-                            return;
-                        }
-
-                        $record->delete();
-
-                        Notification::make()
-                            ->title('Varian dihapus')
-                            ->success()
-                            ->send();
-                    }),
+                        }),
+                ])
             ])
 
             ->toolbarActions([

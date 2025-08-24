@@ -5,6 +5,7 @@ namespace App\AppPanel\Clusters\Settings\Resources\Users\Tables;
 use App\AppPanel\Clusters\Settings\Resources\Users\UserResource;
 use App\Models\User;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
@@ -154,23 +155,23 @@ class UsersTable
             ])
 
             ->recordActions([
-                Action::make('activities')
-                    ->label('Aktivitas')
-                    ->icon('heroicon-m-clock')
-                    ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin'))
-                    ->url(fn($record) => UserResource::getUrl('activities', ['record' => $record])),
-                ViewAction::make(),
-                EditAction::make()
-                    ->visible(fn(): bool => auth()->user()?->can('update', User::class) ?? true),
-                DeleteAction::make(),
+                ActionGroup::make([
+                    Action::make('activities')
+                        ->label('Aktivitas')
+                        ->icon('heroicon-m-clock')
+                        ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin'))
+                        ->color('primary')
+                        ->url(fn($record) => UserResource::getUrl('activities', ['record' => $record])),
+                    ViewAction::make()->color('primary'),
+                    EditAction::make()
+                        ->visible(fn(): bool => auth()->user()?->can('update', User::class) ?? true),
+                    DeleteAction::make(),
+                ])
             ])
 
             ->bulkActions([
                 BulkActionGroup::make([
                     DeleteBulkAction::make(),
-                    // Aktifkan dua ini jika pakai SoftDeletes:
-                    // RestoreBulkAction::make(),
-                    // ForceDeleteBulkAction::make(),
                 ]),
             ]);
     }

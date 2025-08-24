@@ -3,9 +3,12 @@
 namespace App\AppPanel\Clusters\Produk\Resources\Suppliers;
 
 use App\AppPanel\Clusters\Produk\ProdukCluster;
+use App\AppPanel\Clusters\Produk\Resources\Suppliers\Pages\ListSupplierActivities;
 use App\AppPanel\Clusters\Produk\Resources\Suppliers\Pages\ManageSuppliers;
 use App\Models\Inventory\Supplier;
 use BackedEnum;
+use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
@@ -142,10 +145,18 @@ class SupplierResource extends Resource
                 TrashedFilter::make(),
             ])
             ->recordActions([
-                EditAction::make(),
-                DeleteAction::make(),
-                ForceDeleteAction::make(),
-                RestoreAction::make(),
+                ActionGroup::make([
+                    Action::make('activities')
+                        ->label('Aktivitas')
+                        ->icon('heroicon-m-clock')
+                        ->color('primary')
+                        ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin'))
+                        ->url(fn($record) => SupplierResource::getUrl('activities', ['record' => $record])),
+                    EditAction::make(),
+                    DeleteAction::make(),
+                    ForceDeleteAction::make(),
+                    RestoreAction::make(),
+                ])
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
@@ -160,6 +171,7 @@ class SupplierResource extends Resource
     {
         return [
             'index' => ManageSuppliers::route('/'),
+            'activities' => ListSupplierActivities::route('/{record}/activities'),
         ];
     }
 

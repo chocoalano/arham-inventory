@@ -3,10 +3,13 @@
 namespace App\AppPanel\Clusters\Inventory\Resources\Payments;
 
 use App\AppPanel\Clusters\Inventory\InventoryCluster;
+use App\AppPanel\Clusters\Inventory\Resources\Payments\Pages\ListPaymentActivities;
 use App\AppPanel\Clusters\Inventory\Resources\Payments\Pages\ManagePayments;
 use App\Models\Inventory\Invoice;
 use App\Models\Inventory\Payment;
 use BackedEnum;
+use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
@@ -151,8 +154,16 @@ class PaymentResource extends Resource
                     }),
             ])
             ->recordActions([
-                EditAction::make(),
-                DeleteAction::make(),
+                ActionGroup::make([
+                    Action::make('activities')
+                        ->label('Aktivitas')
+                        ->icon('heroicon-m-clock')
+                        ->color('primary')
+                        ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin'))
+                        ->url(fn($record): string => PaymentResource::getUrl('activities', ['record' => $record])),
+                    EditAction::make(),
+                    DeleteAction::make(),
+                ])
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
@@ -165,6 +176,7 @@ class PaymentResource extends Resource
     {
         return [
             'index' => ManagePayments::route('/'),
+            'activities' => ListPaymentActivities::route('/{record}/activities'),
         ];
     }
 }

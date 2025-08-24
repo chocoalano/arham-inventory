@@ -3,15 +3,18 @@
 namespace App\AppPanel\Clusters\Inventory\Resources\Invoices;
 
 use App\AppPanel\Clusters\Inventory\InventoryCluster;
+use App\AppPanel\Clusters\Inventory\Resources\Invoices\Pages\ListInvoiceActivities;
 use App\AppPanel\Clusters\Inventory\Resources\Invoices\Pages\ManageInvoices;
 use App\Models\Inventory\Invoice;
 use App\Models\Inventory\Transaction;
 use BackedEnum;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
@@ -27,7 +30,11 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\Summarizers\Sum;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 
@@ -202,16 +209,122 @@ class InvoiceResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                //
+                // 1) Status Pembayaran (Lunas / Belum Lunas / Semua)
+                TernaryFilter::make('is_paid')
+                    ->label('Status Pembayaran')
+                    ->trueLabel('Lunas')
+                    ->falseLabel('Belum Lunas')
+                    ->nullable(), // izinkan "Semua"
+
+                // 2) Rentang Tanggal Dibuat
+                Filter::make('created_between')
+                    ->label('Rentang Tanggal')
+                    ->form([
+                        DatePicker::make('from')
+                            ->label('Dari'),
+                        DatePicker::make('until')
+                            ->label('Sampai')
+                            ->closeOnDateSelection(),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when($data['from'] ?? null, fn(Builder $q, $date) => $q->whereDate('created_at', '>=', $date))
+                            ->when($data['until'] ?? null, fn(Builder $q, $date) => $q->whereDate('created_at', '<=', $date));
+                    })
+                    ->indicateUsing(function (array $data): array {
+                        $indicators = [];
+                        if (!empty($data['from'])) {
+                            $indicators[] = 'Dari: ' . \Illuminate\Support\Carbon::parse($data['from'])->isoFormat('D MMM Y');
+                        }
+                        if (!empty($data['until'])) {
+                            $indicators[] = 'Sampai: ' . \Illuminate\Support\Carbon::parse($data['until'])->isoFormat('D MMM Y');
+                        }
+                        return $indicators;
+                    }),
+
+                // 3) Range Nominal Total (IDR)
+                Filter::make('total_amount_range')
+                    ->label('Range Total')
+                    ->form([
+                        TextInput::make('min')->label('Min')->numeric(),
+                        TextInput::make('max')->label('Max')->numeric(),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when($data['min'] ?? null, fn(Builder $q, $v) => $q->where('total_amount', '>=', $v))
+                            ->when($data['max'] ?? null, fn(Builder $q, $v) => $q->where('total_amount', '<=', $v));
+                    })
+                    ->indicateUsing(fn(array $data) => array_filter([
+                        isset($data['min']) ? 'Min: ' . number_format((float) $data['min']) : null,
+                        isset($data['max']) ? 'Max: ' . number_format((float) $data['max']) : null,
+                    ])),
+
+                // 5) Ada / Tidak Ada Pembayaran
+                TernaryFilter::make('has_payments')
+                    ->label('Memiliki Pembayaran')
+                    ->queries(
+                        true: fn(Builder $q) => $q->whereHas('payments'),
+                        false: fn(Builder $q) => $q->doesntHave('payments'),
+                        blank: fn(Builder $q) => $q
+                    )
+                    ->trueLabel('Ada')
+                    ->falseLabel('Tidak Ada'),
+
+                // 6) Preset Periode Cepat (Hari ini / Minggu ini / Bulan ini)
+                Filter::make('periode')
+                    ->label('Periode')
+                    ->form([
+                        Select::make('preset')
+                            ->options([
+                                'today' => 'Hari Ini',
+                                'this_week' => 'Minggu Ini',
+                                'this_month' => 'Bulan Ini',
+                                'last_30' => '30 Hari Terakhir',
+                            ])
+                            ->native(false)
+                            ->placeholder('— Pilih Periode —'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        $preset = $data['preset'] ?? null;
+                        if (!$preset)
+                            return $query;
+
+                        $today = now();
+                        return match ($preset) {
+                            'today' => $query->whereDate('created_at', $today->toDateString()),
+                            'this_week' => $query->whereBetween('created_at', [$today->startOfWeek(), $today->endOfWeek()]),
+                            'this_month' => $query->whereBetween('created_at', [$today->copy()->startOfMonth(), $today->copy()->endOfMonth()]),
+                            'last_30' => $query->where('created_at', '>=', $today->copy()->subDays(30)),
+                            default => $query,
+                        };
+                    })
+                    ->indicateUsing(function (array $data): array {
+                        return match ($data['preset'] ?? null) {
+                            'today' => ['Hari Ini'],
+                            'this_week' => ['Minggu Ini'],
+                            'this_month' => ['Bulan Ini'],
+                            'last_30' => ['30 Hari Terakhir'],
+                            default => [],
+                        };
+                    }),
             ])
             ->recordActions([
-                Action::make('cetak_invoice')
-                    ->label('Cetak invoice')
-                    ->url(fn($record): string => route('inventory.cetak-invoice', ['id' => $record->id]))
-                    ->openUrlInNewTab()
-                    ->visible(fn(): bool => auth()->user()->hasPermissionTo('viewAny-invoice')),
-                EditAction::make(),
-                DeleteAction::make(),
+                ActionGroup::make([
+                    Action::make('activities')
+                        ->label('Aktivitas')
+                        ->icon('heroicon-m-clock')
+                        ->color('primary')
+                        ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin'))
+                        ->url(fn($record): string => InvoiceResource::getUrl('activities', ['record' => $record])),
+                    Action::make('cetak_invoice')
+                        ->label('Cetak invoice')
+                        ->url(fn($record): string => route('inventory.cetak-invoice', ['id' => $record->id]))
+                        ->openUrlInNewTab()
+                        ->icon('heroicon-m-printer')
+                        ->visible(fn(): bool => auth()->user()->hasPermissionTo('viewAny-invoice')),
+                    EditAction::make(),
+                    DeleteAction::make(),
+                ])
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
@@ -224,6 +337,7 @@ class InvoiceResource extends Resource
     {
         return [
             'index' => ManageInvoices::route('/'),
+            'activities' => ListInvoiceActivities::route('/{record}/activities'),
         ];
     }
 }

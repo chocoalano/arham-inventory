@@ -3,6 +3,7 @@
 namespace App\Models\RBAC;
 
 use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -45,5 +46,15 @@ class Role extends Model
             ->logFillable()                 // log semua field fillable
             ->useLogName('peran pengguna')          // nama log
             ->dontSubmitEmptyLogs();        // hindari log kosong
+    }
+
+    public static function findByName(string $name): ?self
+    {
+        return static::query()
+            ->when(static::query()->getConnection()->getDriverName() === 'pgsql',
+                fn (Builder $q) => $q->whereRaw('LOWER(name) = ?', [mb_strtolower($name)]),
+                fn (Builder $q) => $q->whereRaw('LOWER(name) = ?', [mb_strtolower($name)]) // aman juga untuk MySQL
+            )
+            ->first();
     }
 }

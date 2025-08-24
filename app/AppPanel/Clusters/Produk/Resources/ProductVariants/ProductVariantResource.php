@@ -5,6 +5,7 @@ namespace App\AppPanel\Clusters\Produk\Resources\ProductVariants;
 use App\AppPanel\Clusters\Produk\ProdukCluster;
 use App\AppPanel\Clusters\Produk\Resources\ProductVariants\Pages\CreateProductVariant;
 use App\AppPanel\Clusters\Produk\Resources\ProductVariants\Pages\EditProductVariant;
+use App\AppPanel\Clusters\Produk\Resources\ProductVariants\Pages\ListProductVariantActivities;
 use App\AppPanel\Clusters\Produk\Resources\ProductVariants\Pages\ListProductVariants;
 use App\AppPanel\Clusters\Produk\Resources\ProductVariants\Schemas\ProductVariantForm;
 use App\AppPanel\Clusters\Produk\Resources\ProductVariants\Tables\ProductVariantsTable;
@@ -55,6 +56,7 @@ class ProductVariantResource extends Resource
             'index' => ListProductVariants::route('/'),
             'create' => CreateProductVariant::route('/create'),
             'edit' => EditProductVariant::route('/{record}/edit'),
+            'activities' => ListProductVariantActivities::route('/{record}/activities'),
         ];
     }
 }

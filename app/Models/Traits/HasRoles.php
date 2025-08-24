@@ -6,6 +6,8 @@ use App\Models\RBAC\Permission;
 use App\Models\RBAC\Role;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 
 trait HasRoles
 {
@@ -61,8 +63,10 @@ trait HasRoles
 
         return $this->roles()
             ->where(function ($q) use ($ids, $names) {
-                if (! empty($ids))   $q->whereKey($ids);
-                if (! empty($names)) $q->orWhereIn('name', $names);
+                if (!empty($ids))
+                    $q->whereKey($ids);
+                if (!empty($names))
+                    $q->orWhereIn('name', $names);
             })
             ->exists();
     }
@@ -76,8 +80,10 @@ trait HasRoles
 
         $count = $this->roles()
             ->where(function ($q) use ($ids, $names) {
-                if (! empty($ids))   $q->whereKey($ids);
-                if (! empty($names)) $q->orWhereIn('name', $names);
+                if (!empty($ids))
+                    $q->whereKey($ids);
+                if (!empty($names))
+                    $q->orWhereIn('name', $names);
             })
             ->distinct()
             ->count('roles.id');
@@ -164,9 +170,12 @@ trait HasRoles
         $perms = $this->getAllPermissions();
 
         foreach ($permissions as $p) {
-            if ($p instanceof Permission && $perms->contains('id', $p->getKey())) return true;
-            if (is_int($p)               && $perms->contains('id', $p))          return true;
-            if (is_string($p)            && $perms->contains('name', $p))        return true;
+            if ($p instanceof Permission && $perms->contains('id', $p->getKey()))
+                return true;
+            if (is_int($p) && $perms->contains('id', $p))
+                return true;
+            if (is_string($p) && $perms->contains('name', $p))
+                return true;
         }
         return false;
     }
@@ -240,5 +249,39 @@ trait HasRoles
         static::saved(function ($model) {
             $model->clearPermissionsCache();
         });
+    }
+
+    /**
+     * Ganti seluruh role user sesuai input.
+     *
+     * @param  array|string|int|Role  $roles  Bisa: 1) single id/nama/model,
+     *                                        2) array campuran id/nama/model,
+     *                                        3) string dipisah koma/pipe: "Admin,Editor" atau "Admin|Editor"
+     */
+    public function syncRoles(array|string|int|Role $roles): static
+    {
+        // Normalisasi ke array
+        $roles = is_string($roles)
+            ? preg_split('/[|,]+/', $roles, -1, PREG_SPLIT_NO_EMPTY) // dukung "Admin,Editor" / "Admin|Editor"
+            : Arr::wrap($roles);
+
+        // Resolve ke model Role & ambil ID unik
+        $ids = collect($roles)
+            ->map(fn($v) => $v instanceof Role
+                ? $v
+                : (is_int($v) || ctype_digit((string) $v)
+                    ? Role::findOrFail((int) $v)              // by id
+                    : Role::findByNameOrFail((string) $v)))   // by name (method dari model Role kamu sebelumnya)
+            ->pluck('id')
+            ->unique()
+            ->values()
+            ->all();
+
+        DB::transaction(function () use ($ids) {
+            $this->roles()->sync($ids);         // replace semua role di pivot user_role
+            $this->load('roles');               // refresh relasi
+        });
+
+        return $this->clearPermissionsCache();  // bersihkan cache permission lokal
     }
 }

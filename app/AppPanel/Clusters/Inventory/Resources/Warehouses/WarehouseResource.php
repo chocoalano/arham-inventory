@@ -3,9 +3,12 @@
 namespace App\AppPanel\Clusters\Inventory\Resources\Warehouses;
 
 use App\AppPanel\Clusters\Inventory\InventoryCluster;
+use App\AppPanel\Clusters\Inventory\Resources\Warehouses\Pages\ListWarehouseActivities;
 use App\AppPanel\Clusters\Inventory\Resources\Warehouses\Pages\ManageWarehouses;
 use App\Models\Inventory\Warehouse;
 use BackedEnum;
+use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
@@ -168,62 +171,70 @@ class WarehouseResource extends Resource
                     ->query(fn($query) => $query->whereNotNull('location')->where('location', '<>', '')),
             ])
             ->recordActions([
-                ViewAction::make()
-                    ->schema([
-                        Section::make('Informasi Gudang Penyimpanan')
-                            ->description('Bagian ini menampilkan informasi dasar mengenai gudang penyimpanan.')
-                            ->columns(3)
-                            ->schema([
-                                TextEntry::make('code')->label('Kode'),
-                                TextEntry::make('name')->label('Nama'),
-                                TextEntry::make('address')->label('Alamat'),
-                                TextEntry::make('district')->label('Kecamatan'),
-                                TextEntry::make('city')->label('Kota'),
-                                TextEntry::make('province')->label('Provinsi'),
-                                TextEntry::make('postal_code')->label('Kode Pos'),
-                                TextEntry::make('lat')->label('Garis Lintang (Lat)'),
-                                TextEntry::make('lng')->label('Garis Bujur (Lng)'),
-                                TextEntry::make('phone')->label('Telepon'),
-                                TextEntry::make('is_active')
-                                    ->label('Status Aktif')
-                                    ->formatStateUsing(fn($state): string => $state ? 'Aktif' : 'Tidak Aktif')
-                                    ->badge()
-                                    ->color(fn($state) => $state ? 'success' : 'danger'),
-                            ]),
+                ActionGroup::make([
+                    Action::make('activities')
+                        ->label('Aktivitas')
+                        ->icon('heroicon-m-clock')
+                        ->color('primary')
+                        ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin'))
+                        ->url(fn($record) => WarehouseResource::getUrl('activities', ['record' => $record])),
+                    ViewAction::make()
+                        ->schema([
+                            Section::make('Informasi Gudang Penyimpanan')
+                                ->description('Bagian ini menampilkan informasi dasar mengenai gudang penyimpanan.')
+                                ->columns(3)
+                                ->schema([
+                                    TextEntry::make('code')->label('Kode'),
+                                    TextEntry::make('name')->label('Nama'),
+                                    TextEntry::make('address')->label('Alamat'),
+                                    TextEntry::make('district')->label('Kecamatan'),
+                                    TextEntry::make('city')->label('Kota'),
+                                    TextEntry::make('province')->label('Provinsi'),
+                                    TextEntry::make('postal_code')->label('Kode Pos'),
+                                    TextEntry::make('lat')->label('Garis Lintang (Lat)'),
+                                    TextEntry::make('lng')->label('Garis Bujur (Lng)'),
+                                    TextEntry::make('phone')->label('Telepon'),
+                                    TextEntry::make('is_active')
+                                        ->label('Status Aktif')
+                                        ->formatStateUsing(fn($state): string => $state ? 'Aktif' : 'Tidak Aktif')
+                                        ->badge()
+                                        ->color(fn($state) => $state ? 'success' : 'danger'),
+                                ]),
 
-                        Section::make('Informasi Barang Tersimpanan')
-                            ->description('Daftar varian dan jumlah stok yang tersimpan di gudang ini.')
-                            ->columns(1)
-                            ->schema([
-                                // Tampilkan daftar stok bila ada
-                                RepeatableEntry::make('stocks')
-                                    ->label('Stok per Varian')
-                                    ->columns(4)
-                                    ->schema([
-                                        TextEntry::make('variant.product.name')->label('Nama Produk')->placeholder('-'),
-                                        TextEntry::make('variant.product.sku')->label('SKU Produk')->placeholder('-'),
-                                        TextEntry::make('variant.color')->label('Varian Warna Produk')->placeholder('-'),
-                                        TextEntry::make('variant.size')->label('Varian Ukuran Produk')->placeholder('-'),
-                                        TextEntry::make('variant.sku_variant')->label('SKU Varian')->placeholder('-'),
-                                        TextEntry::make('qty')->label('Qty')->badge()->color('info'),
-                                        TextEntry::make('reserved_qty')->label('Reservasi')->badge()->color('warning'),
-                                        TextEntry::make('available')
-                                            ->label('Tersedia')
-                                            ->state(fn($record) => max(0, (int) $record->qty - (int) $record->reserved_qty))
-                                            ->badge()
-                                            ->color(fn($state) => $state > 0 ? 'success' : 'danger'),
-                                    ])
-                                    ->visible(fn($record) => $record->stocks && $record->stocks->isNotEmpty()),
+                            Section::make('Informasi Barang Tersimpanan')
+                                ->description('Daftar varian dan jumlah stok yang tersimpan di gudang ini.')
+                                ->columns(1)
+                                ->schema([
+                                    // Tampilkan daftar stok bila ada
+                                    RepeatableEntry::make('stocks')
+                                        ->label('Stok per Varian')
+                                        ->columns(4)
+                                        ->schema([
+                                            TextEntry::make('variant.product.name')->label('Nama Produk')->placeholder('-'),
+                                            TextEntry::make('variant.product.sku')->label('SKU Produk')->placeholder('-'),
+                                            TextEntry::make('variant.color')->label('Varian Warna Produk')->placeholder('-'),
+                                            TextEntry::make('variant.size')->label('Varian Ukuran Produk')->placeholder('-'),
+                                            TextEntry::make('variant.sku_variant')->label('SKU Varian')->placeholder('-'),
+                                            TextEntry::make('qty')->label('Qty')->badge()->color('info'),
+                                            TextEntry::make('reserved_qty')->label('Reservasi')->badge()->color('warning'),
+                                            TextEntry::make('available')
+                                                ->label('Tersedia')
+                                                ->state(fn($record) => max(0, (int) $record->qty - (int) $record->reserved_qty))
+                                                ->badge()
+                                                ->color(fn($state) => $state > 0 ? 'success' : 'danger'),
+                                        ])
+                                        ->visible(fn($record) => $record->stocks && $record->stocks->isNotEmpty()),
 
-                                // Placeholder saat kosong
-                                Placeholder::make('stocks_empty')
-                                    ->label('Stok per Varian')
-                                    ->content('Gudang ini belum memiliki stok varian.')
-                                    ->visible(fn($record) => !$record->stocks || $record->stocks->isEmpty()),
-                            ]),
-                    ]),
-                EditAction::make(),
-                DeleteAction::make(),
+                                    // Placeholder saat kosong
+                                    Placeholder::make('stocks_empty')
+                                        ->label('Stok per Varian')
+                                        ->content('Gudang ini belum memiliki stok varian.')
+                                        ->visible(fn($record) => !$record->stocks || $record->stocks->isEmpty()),
+                                ]),
+                        ]),
+                    EditAction::make(),
+                    DeleteAction::make(),
+                ])
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
@@ -232,17 +243,11 @@ class WarehouseResource extends Resource
             ]);
     }
 
-    public static function getRelations(): array
-    {
-        return [
-            RelationManagers\StocksRelationManager::class,
-        ];
-    }
-
     public static function getPages(): array
     {
         return [
             'index' => ManageWarehouses::route('/'),
+            'activities' => ListWarehouseActivities::route('/{record}/activities'),
         ];
     }
 }

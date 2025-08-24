@@ -3,6 +3,7 @@
 namespace App\AppPanel\Clusters\Produk\Resources\Products;
 
 use App\AppPanel\Clusters\Produk\ProdukCluster;
+use App\AppPanel\Clusters\Produk\Resources\Products\Pages\ListProductActivities;
 use App\AppPanel\Clusters\Produk\Resources\Products\Pages\CreateProduct;
 use App\AppPanel\Clusters\Produk\Resources\Products\Pages\EditProduct;
 use App\AppPanel\Clusters\Produk\Resources\Products\Pages\ListProducts;
@@ -55,6 +56,7 @@ class ProductResource extends Resource
             'index' => ListProducts::route('/'),
             'create' => CreateProduct::route('/create'),
             'edit' => EditProduct::route('/{record}/edit'),
+            'activities' => ListProductActivities::route('/{record}/activities'),
         ];
     }
 }

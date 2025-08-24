@@ -5,6 +5,7 @@ namespace App\AppPanel\Clusters\Inventory\Resources\Transactions;
 use App\AppPanel\Clusters\Inventory\InventoryCluster;
 use App\AppPanel\Clusters\Inventory\Resources\Transactions\Pages\CreateTransaction;
 use App\AppPanel\Clusters\Inventory\Resources\Transactions\Pages\EditTransaction;
+use App\AppPanel\Clusters\Inventory\Resources\Transactions\Pages\ListTransactionActivities;
 use App\AppPanel\Clusters\Inventory\Resources\Transactions\Pages\ListTransactions;
 use App\AppPanel\Clusters\Inventory\Resources\Transactions\Schemas\TransactionForm;
 use App\AppPanel\Clusters\Inventory\Resources\Transactions\Tables\TransactionsTable;
@@ -54,6 +55,7 @@ class TransactionResource extends Resource
             'index' => ListTransactions::route('/'),
             'create' => CreateTransaction::route('/create'),
             'edit' => EditTransaction::route('/{record}/edit'),
+            'activities' => ListTransactionActivities::route('/{record}/activities'),
         ];
     }
 }

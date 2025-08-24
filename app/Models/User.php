@@ -7,6 +7,7 @@ use App\Models\Inventory\Warehouse;
 use App\Models\Traits\HasRoles;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Spatie\Activitylog\LogOptions;
@@ -50,6 +51,11 @@ class User extends Authenticatable
     public function warehouse(): BelongsTo
     {
         return $this->belongsTo(Warehouse::class, 'warehouse_id');
+    }
+
+    public function log():HasMany
+    {
+        return $this->hasMany(Log::class, 'causer_id', 'id');
     }
 
     public function getActivitylogOptions(): LogOptions

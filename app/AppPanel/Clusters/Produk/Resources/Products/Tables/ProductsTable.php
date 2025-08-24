@@ -2,6 +2,9 @@
 
 namespace App\AppPanel\Clusters\Produk\Resources\Products\Tables;
 
+use App\AppPanel\Clusters\Produk\Resources\Products\ProductResource;
+use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
@@ -27,39 +30,47 @@ class ProductsTable
                 //
             ])
             ->recordActions([
-                EditAction::make()
-                    ->disabled(fn($record) => $record->transactions()->exists())
-                    ->tooltip(fn($record) => $record->transactions()->exists()
-                        ? 'Produk memiliki transaksi dan tidak bisa diperbaharui.'
-                        : null),
-                DeleteAction::make()
-                    ->requiresConfirmation()
-                    ->action(function ($record, DeleteAction $action) {
-                        // ganti 'transactions' sesuai nama relasi yg kamu pakai
-                        if ($record->transactions()->exists()) {
+                ActionGroup::make([
+                    Action::make('activities')
+                        ->label('Aktivitas')
+                        ->icon('heroicon-m-clock')
+                        ->color('primary')
+                        ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin'))
+                        ->url(fn($record) => ProductResource::getUrl('activities', ['record' => $record])),
+                    EditAction::make()
+                        ->disabled(fn($record) => $record->transactions()->exists())
+                        ->tooltip(fn($record) => $record->transactions()->exists()
+                            ? 'Produk memiliki transaksi dan tidak bisa diperbaharui.'
+                            : null),
+                    DeleteAction::make()
+                        ->requiresConfirmation()
+                        ->action(function ($record, DeleteAction $action) {
+                            // ganti 'transactions' sesuai nama relasi yg kamu pakai
+                            if ($record->transactions()->exists()) {
+                                Notification::make()
+                                    ->title('Tidak bisa dihapus')
+                                    ->body('Produk ini sudah memiliki transaksi.')
+                                    ->danger()
+                                    ->send();
+
+                                // hentikan aksi delete
+                                $action->halt();
+                                return;
+                            }
+
+                            $record->delete();
+
                             Notification::make()
-                                ->title('Tidak bisa dihapus')
-                                ->body('Produk ini sudah memiliki transaksi.')
-                                ->danger()
+                                ->title('Produk dihapus')
+                                ->success()
                                 ->send();
-
-                            // hentikan aksi delete
-                            $action->halt();
-                            return;
-                        }
-
-                        $record->delete();
-
-                        Notification::make()
-                            ->title('Produk dihapus')
-                            ->success()
-                            ->send();
-                    })
-                    // Opsional: nonaktifkan tombol saat punya transaksi (UX lebih jelas)
-                    ->disabled(fn($record) => $record->transactions()->exists())
-                    ->tooltip(fn($record) => $record->transactions()->exists()
-                        ? 'Produk memiliki transaksi dan tidak bisa dihapus.'
-                        : null),
+                        })
+                        // Opsional: nonaktifkan tombol saat punya transaksi (UX lebih jelas)
+                        ->disabled(fn($record) => $record->transactions()->exists())
+                        ->tooltip(fn($record) => $record->transactions()->exists()
+                            ? 'Produk memiliki transaksi dan tidak bisa dihapus.'
+                            : null),
+                ])
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
