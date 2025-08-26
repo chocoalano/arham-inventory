@@ -10,12 +10,20 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Actions\ForceDeleteAction;
+use Filament\Actions\ForceDeleteBulkAction;
+use Filament\Actions\ReplicateAction;
+use Filament\Actions\RestoreAction;
+use Filament\Actions\RestoreBulkAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\TextInput;
 use Filament\Support\Enums\Width;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
@@ -73,7 +81,7 @@ class TransactionsTable
                     ->form([
                         DatePicker::make('min_date'),
                         DatePicker::make('max_date'),
-                    ])
+                    ])->columns(2)
                     ->query(function (Builder $query, array $data): Builder {
                         return $query
                             ->when(
@@ -85,7 +93,8 @@ class TransactionsTable
                                 fn(Builder $query, $date): Builder => $query->whereDate('transaction_date', '<=', $date),
                             );
                     }),
-            ])
+                TrashedFilter::make(),
+            ], layout: FiltersLayout::AboveContent)
             ->recordActions([
                 ActionGroup::make([
                     Action::make('activities')
@@ -149,11 +158,24 @@ class TransactionsTable
                         })
                         ->modalWidth(Width::Full),
                     DeleteAction::make(),
+                    RestoreAction::make(),
+                    ReplicateAction::make()
+                        ->form([
+                            TextInput::make('reference_number')
+                                ->label('Nomor Referensi')
+                                ->required()
+                                ->maxLength(64)
+                                ->default(fn(array $data) => Transaction::generateUniqueReferenceNumber())
+                                ->unique(table: Transaction::class, column: 'reference_number'),
+                        ]),
+                    ForceDeleteAction::make()
                 ])
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
                     DeleteBulkAction::make(),
+                    ForceDeleteBulkAction::make(),
+                    RestoreBulkAction::make()
                 ]),
             ]);
     }

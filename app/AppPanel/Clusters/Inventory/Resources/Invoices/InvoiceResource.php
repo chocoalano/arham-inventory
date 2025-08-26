@@ -14,6 +14,11 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Actions\ForceDeleteAction;
+use Filament\Actions\ForceDeleteBulkAction;
+use Filament\Actions\ReplicateAction;
+use Filament\Actions\RestoreAction;
+use Filament\Actions\RestoreBulkAction;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Placeholder;
@@ -30,9 +35,11 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\Summarizers\Sum;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
+use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
@@ -225,7 +232,7 @@ class InvoiceResource extends Resource
                         DatePicker::make('until')
                             ->label('Sampai')
                             ->closeOnDateSelection(),
-                    ])
+                    ])->columns(2)
                     ->query(function (Builder $query, array $data): Builder {
                         return $query
                             ->when($data['from'] ?? null, fn(Builder $q, $date) => $q->whereDate('created_at', '>=', $date))
@@ -248,7 +255,7 @@ class InvoiceResource extends Resource
                     ->form([
                         TextInput::make('min')->label('Min')->numeric(),
                         TextInput::make('max')->label('Max')->numeric(),
-                    ])
+                    ])->columns(2)
                     ->query(function (Builder $query, array $data): Builder {
                         return $query
                             ->when($data['min'] ?? null, fn(Builder $q, $v) => $q->where('total_amount', '>=', $v))
@@ -307,7 +314,8 @@ class InvoiceResource extends Resource
                             default => [],
                         };
                     }),
-            ])
+                TrashedFilter::make(),
+            ], layout: FiltersLayout::AboveContent)
             ->recordActions([
                 ActionGroup::make([
                     Action::make('activities')
@@ -324,11 +332,16 @@ class InvoiceResource extends Resource
                         ->visible(fn(): bool => auth()->user()->hasPermissionTo('viewAny-invoice')),
                     EditAction::make(),
                     DeleteAction::make(),
+                    RestoreAction::make(),
+                    ReplicateAction::make(),
+                    ForceDeleteAction::make()
                 ])
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
                     DeleteBulkAction::make(),
+                    ForceDeleteBulkAction::make(),
+                    RestoreBulkAction::make()
                 ]),
             ]);
     }

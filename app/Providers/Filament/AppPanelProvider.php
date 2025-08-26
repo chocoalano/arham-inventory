@@ -36,6 +36,7 @@ class AppPanelProvider extends PanelProvider
             ->brandName('Arham Stock System')
             ->brandLogo(asset('images/logo.png'))
             ->brandLogoHeight('3rem')
+            ->databaseNotifications()
             ->login()
             ->colors([
                 'danger' => Color::Rose,       // untuk error / delete

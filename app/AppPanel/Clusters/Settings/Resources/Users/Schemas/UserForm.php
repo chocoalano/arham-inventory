@@ -2,6 +2,7 @@
 
 namespace App\AppPanel\Clusters\Settings\Resources\Users\Schemas;
 
+use App\AppPanel\Clusters\Inventory\Resources\Warehouses\Schema\Form;
 use App\Models\RBAC\Role;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Select;
@@ -52,6 +53,8 @@ class UserForm
                         Select::make('warehouse_id')
                             ->label('Pilih Penempatan kerja anda')
                             ->relationship('warehouse', 'name')
+                            ->createOptionForm(Form::schemaForm())
+                            ->editOptionForm(Form::schemaForm())
                             ->belowContent('Silahkan pilih penempatan kerja pengguna ini.')
                             ->visible(fn(Get $get) => $get('role_id') !== 'Superadmin' ? true : false)
                             ->required(),

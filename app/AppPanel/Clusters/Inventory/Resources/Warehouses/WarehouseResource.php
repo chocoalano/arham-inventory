@@ -5,6 +5,7 @@ namespace App\AppPanel\Clusters\Inventory\Resources\Warehouses;
 use App\AppPanel\Clusters\Inventory\InventoryCluster;
 use App\AppPanel\Clusters\Inventory\Resources\Warehouses\Pages\ListWarehouseActivities;
 use App\AppPanel\Clusters\Inventory\Resources\Warehouses\Pages\ManageWarehouses;
+use App\AppPanel\Clusters\Inventory\Resources\Warehouses\Schema\Form;
 use App\Models\Inventory\Warehouse;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -13,7 +14,13 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Actions\ForceDeleteAction;
+use Filament\Actions\ForceDeleteBulkAction;
+use Filament\Actions\ReplicateAction;
+use Filament\Actions\RestoreAction;
+use Filament\Actions\RestoreBulkAction;
 use Filament\Actions\ViewAction;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\KeyValue;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Textarea;
@@ -27,8 +34,13 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TernaryFilter;
+use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 use PhpParser\Node\Expr\Cast\Bool_;
@@ -51,68 +63,7 @@ class WarehouseResource extends Resource
     public static function form(Schema $schema): Schema
     {
         return $schema
-            ->components([
-                Section::make('Data Gudang')
-                    ->description('Informasi dasar mengenai gudang, termasuk kode dan nama unik untuk identifikasi.') // Deskripsi
-                    ->columns(3)
-                    ->schema([
-                        TextInput::make('code')
-                            ->label('Kode')
-                            ->maxLength(32)
-                            ->required()
-                            ->unique(ignoreRecord: true)
-                            ->default(fn() => app()->environment(['debug', 'local']) ? strtoupper(Str::random(6)) : null),
-                        TextInput::make('name')
-                            ->label('Nama Gudang')
-                            ->maxLength(150)
-                            ->required()
-                            ->unique(ignoreRecord: true)
-                            ->default(fn() => app()->environment(['debug', 'local']) ? fake()->city() . ' Warehouse' : null),
-                        Toggle::make('is_active')
-                            ->label('Aktif')
-                            ->default(true),
-                    ])->columnSpanFull(),
-                Section::make('Lokasi & Kontak')
-                    ->description('Informasi detail lokasi dan kontak yang dapat digunakan untuk keperluan pengiriman atau komunikasi.') // Deskripsi
-                    ->columns(3)
-                    ->schema([
-                        TextInput::make('address')
-                            ->label('Alamat')
-                            ->columnSpan(3)
-                            ->default(fn() => app()->environment(['debug', 'local']) ? fake()->streetAddress() : null), // Autofill alamat
-                        TextInput::make('district')
-                            ->label('Kecamatan')
-                            ->default(fn() => app()->environment(['debug', 'local']) ? fake()->citySuffix() : null), // Autofill kecamatan
-                        TextInput::make('city')
-                            ->label('Kota')
-                            ->default(fn() => app()->environment(['debug', 'local']) ? fake()->city() : null), // Autofill kota
-                        TextInput::make('province')
-                            ->label('Provinsi')
-                            ->default(fn() => app()->environment(['debug', 'local']) ? fake()->state() : null), // Autofill provinsi
-                        TextInput::make('postal_code')
-                            ->label('Kode Pos')
-                            ->maxLength(16)
-                            ->default(fn() => app()->environment(['debug', 'local']) ? fake()->postcode() : null), // Autofill kode pos
-                        TextInput::make('phone')
-                            ->label('Telepon')
-                            ->maxLength(32)
-                            ->default(fn() => app()->environment(['debug', 'local']) ? fake()->phoneNumber() : null), // Autofill nomor telepon
-                        Grid::make(2)
-                            ->schema([
-                                TextInput::make('lat')
-                                    ->label('Latitude')
-                                    ->numeric()
-                                    ->rule('between:-90,90')
-                                    ->default(fn() => app()->environment(['debug', 'local']) ? fake()->latitude() : null), // Autofill latitude
-                                TextInput::make('lng')
-                                    ->label('Longitude')
-                                    ->numeric()
-                                    ->rule('between:-180,180')
-                                    ->default(fn() => app()->environment(['debug', 'local']) ? fake()->longitude() : null), // Autofill longitude
-                            ])
-                            ->columnSpanFull(),
-                    ])->columnSpanFull(),
-            ]);
+            ->components(Form::schemaForm());
     }
 
     public static function table(Table $table): Table
@@ -166,10 +117,93 @@ class WarehouseResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                Filter::make('has_location')
+                /**
+                 * Punya lokasi (efisien): cek lat/lng bukan NULL
+                 * (daripada kolom 'location' yang tidak ada)
+                 */
+                TernaryFilter::make('has_location')
                     ->label('Punya Lokasi')
-                    ->query(fn($query) => $query->whereNotNull('location')->where('location', '<>', '')),
-            ])
+                    ->trueLabel('Ya')
+                    ->falseLabel('Tidak')
+                    ->queries(
+                        true: fn(Builder $q) => $q->whereNotNull('lat')->whereNotNull('lng'),
+                        false: fn(Builder $q) => $q->whereNull('lat')->orWhereNull('lng'),
+                    ),
+
+                /**
+                 * Aktif / Tidak
+                 */
+                TernaryFilter::make('is_active')
+                    ->label('Status Aktif')
+                    ->trueLabel('Aktif')
+                    ->falseLabel('Nonaktif')
+                    ->queries(
+                        true: fn(Builder $q) => $q->where('is_active', true),
+                        false: fn(Builder $q) => $q->where('is_active', false),
+                    ),
+
+                /**
+                 * Kota & Provinsi (distinct → SelectFilter, searchable & preload)
+                 */
+                SelectFilter::make('city')
+                    ->label('Kota')
+                    ->options(
+                        fn() => Warehouse::query()
+                            ->whereNotNull('city')
+                            ->distinct()
+                            ->orderBy('city')
+                            ->pluck('city', 'city')
+                            ->all()
+                    )
+                    ->searchable()
+                    ->preload(),
+
+                SelectFilter::make('province')
+                    ->label('Provinsi')
+                    ->options(
+                        fn() => Warehouse::query()
+                            ->whereNotNull('province')
+                            ->distinct()
+                            ->orderBy('province')
+                            ->pluck('province', 'province')
+                            ->all()
+                    )
+                    ->searchable()
+                    ->preload(),
+
+                /**
+                 * Rentang tanggal dibuat (tanpa fungsi di kolom → sargable)
+                 */
+                Filter::make('created_between')
+                    ->label('Dibuat antara')
+                    ->form([
+                        DatePicker::make('from')->label('Dari'),
+                        DatePicker::make('until')->label('Sampai'),
+                    ])->columns(2)
+                    ->query(function (Builder $q, array $data): Builder {
+                        $from = $data['from'] ?? null;
+                        $until = $data['until'] ?? null;
+
+                        return $q
+                            ->when($from, fn(Builder $qq) => $qq->where('created_at', '>=', $from))
+                            // batas atas eksklusif agar mencakup full hari
+                            ->when($until, fn(Builder $qq) => $qq->where('created_at', '<', \Illuminate\Support\Carbon::parse($until)->addDay()->startOfDay()));
+                    }),
+
+                /**
+                 * Ada stok? (cek relasi stocks.qty > 0)
+                 */
+                TernaryFilter::make('has_stock')
+                    ->label('Ada Stok')
+                    ->trueLabel('Ya')
+                    ->falseLabel('Tidak')
+                    ->queries(
+                        true: fn(Builder $q) => $q->whereHas('stocks', fn($s) => $s->where('qty', '>', 0)),
+                        false: fn(Builder $q) => $q->whereDoesntHave('stocks', fn($s) => $s->where('qty', '>', 0)),
+                    ),
+
+                TrashedFilter::make(),
+            ], layout: FiltersLayout::AboveContent)
             ->recordActions([
                 ActionGroup::make([
                     Action::make('activities')
@@ -234,11 +268,16 @@ class WarehouseResource extends Resource
                         ]),
                     EditAction::make(),
                     DeleteAction::make(),
+                    RestoreAction::make(),
+                    ReplicateAction::make(),
+                    ForceDeleteAction::make()
                 ])
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
                     DeleteBulkAction::make(),
+                    ForceDeleteBulkAction::make(),
+                    RestoreBulkAction::make()
                 ]),
             ]);
     }

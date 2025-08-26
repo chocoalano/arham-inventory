@@ -6,54 +6,72 @@ use App\AppPanel\Clusters\Produk\Resources\ProductVariants\ProductVariantResourc
 use App\Models\Inventory\ProductVariant;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
-use Filament\Actions\DeleteAction;
-use Filament\Actions\EditAction;
-use Filament\Tables\Table;
-use Filament\Tables\Columns\TextColumn;
-
 use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
-
+use Filament\Actions\EditAction;
+use Filament\Actions\ForceDeleteAction;
+use Filament\Actions\ForceDeleteBulkAction;
+use Filament\Actions\ReplicateAction;
+use Filament\Actions\RestoreAction;
+use Filament\Actions\RestoreBulkAction;
+use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TextInput;
+use Filament\Notifications\Notification;
+use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
-
-use Filament\Notifications\Notification;
+use Filament\Tables\Filters\TrashedFilter;
+use Filament\Tables\Table;
 use Illuminate\Support\Collection;
+use Illuminate\Validation\Rule;
 
 class ProductVariantsTable
 {
     public static function configure(Table $table): Table
     {
         return $table
+            // Hemat query: eager-load relasi & total stok
+            ->modifyQueryUsing(fn ($query) => $query
+                ->with(['product:id,sku', 'stocks.warehouse'])
+                ->withSum('stocks as total_stock', 'qty')
+            )
+
             ->columns([
                 TextColumn::make('product.sku')
                     ->label('SKU Produk')
                     ->sortable()
                     ->searchable(),
+
                 TextColumn::make('sku_variant')
                     ->label('SKU Varian')
                     ->sortable()
                     ->searchable(),
+
                 TextColumn::make('color')
                     ->label('Warna')
                     ->sortable()
                     ->searchable(),
+
                 TextColumn::make('size')
                     ->label('Ukuran')
                     ->sortable()
                     ->searchable(),
-                TextColumn::make('stocks')
+
+                // Gunakan alias total_stock dari withSum()
+                TextColumn::make('total_stock')
                     ->label('Total Stok')
-                    ->state(
-                        fn(ProductVariant $record): int =>
-                        (int) $record->stocks->sum('qty')
-                    ),
+                    ->numeric()
+                    ->sortable(),
+
                 TextColumn::make('stock_list')
                     ->label('Stok per Gudang')
-                    ->getStateUsing(function (ProductVariant $record) {
-                        $stocks = $record->relationLoaded('stocks')
-                            ? $record->stocks
-                            : $record->stocks()->with('warehouse')->get();
+                    ->state(function (ProductVariant $record) {
+                        $stocks = $record->stocks;
 
                         if ($stocks->isEmpty()) {
                             return '-';
@@ -72,67 +90,52 @@ class ProductVariantsTable
             ])
 
             ->filters([
-                // Filter berdasarkan Produk (pakai kolom 'sku' agar konsisten dengan kolom)
                 SelectFilter::make('product_id')
                     ->label('Produk')
                     ->relationship('product', 'sku')
                     ->searchable()
                     ->preload(),
 
-                // Filter warna (distinct dari DB)
+                // Warna: opsi distinct dari DB (aman dipakai di SelectFilter)
                 SelectFilter::make('color')
                     ->label('Warna')
-                    ->options(fn() => ProductVariant::query()
+                    ->options(fn () => ProductVariant::query()
                         ->whereNotNull('color')
-                        ->where('color', '!=', '')
-                        ->orderBy('color')
                         ->distinct()
+                        ->orderBy('color')
                         ->pluck('color', 'color')
-                        ->toArray()),
+                        ->toArray()
+                    )
+                    ->searchable()
+                    ->preload(),
 
-                // Filter ukuran (distinct dari DB)
                 SelectFilter::make('size')
                     ->label('Ukuran')
-                    ->options(fn() => ProductVariant::query()
-                        ->whereNotNull('size')
-                        ->where('size', '!=', '')
-                        ->orderBy('size')
-                        ->distinct()
-                        ->pluck('size', 'size')
-                        ->toArray()),
+                    ->options(fn () => array_combine(ProductVariant::SIZES, ProductVariant::SIZES))
+                    ->searchable()
+                    ->preload(),
 
-                // Ada stok (>0) ?
+                // Cukup cek ada baris stok dengan qty > 0 (lebih murah daripada SUM di filter)
                 TernaryFilter::make('has_stock')
                     ->label('Ada Stok')
                     ->trueLabel('Ya')
                     ->falseLabel('Tidak')
                     ->queries(
-                        true: fn($query) => $query->whereHas(
-                            'stocks',
-                            fn($q) =>
-                            $q->selectRaw('product_variant_id, SUM(qty) as total_qty')
-                                ->groupBy('product_variant_id')
-                                ->havingRaw('SUM(qty) > 0')
-                        ),
-                        false: fn($query) => $query->whereDoesntHave(
-                            'stocks',
-                            fn($q) =>
-                            $q->selectRaw('product_variant_id, SUM(qty) as total_qty')
-                                ->groupBy('product_variant_id')
-                                ->havingRaw('SUM(qty) > 0')
-                        ),
+                        true: fn ($q) => $q->whereHas('stocks', fn ($s) => $s->where('qty', '>', 0)),
+                        false: fn ($q) => $q->whereDoesntHave('stocks', fn ($s) => $s->where('qty', '>', 0)),
                     ),
 
-                // Ada transaksi ?
                 TernaryFilter::make('has_transactions')
                     ->label('Ada Transaksi')
                     ->trueLabel('Ya')
                     ->falseLabel('Tidak')
                     ->queries(
-                        true: fn($query) => $query->whereHas('transactions'),
-                        false: fn($query) => $query->whereDoesntHave('transactions'),
+                        true: fn ($q) => $q->whereHas('transactions'),
+                        false: fn ($q) => $q->whereDoesntHave('transactions'),
                     ),
-            ])
+
+                TrashedFilter::make(),
+            ], layout: FiltersLayout::AboveContent)
 
             ->recordActions([
                 ActionGroup::make([
@@ -140,114 +143,154 @@ class ProductVariantsTable
                         ->label('Aktivitas')
                         ->icon('heroicon-m-clock')
                         ->color('primary')
-                        ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin'))
-                        ->url(fn($record) => ProductVariantResource::getUrl('activities', ['record' => $record])),
-                    // === EDIT ===
+                        ->visible(fn (): bool => (bool) auth()->user()?->hasRole('Superadmin'))
+                        ->url(fn ($record) => ProductVariantResource::getUrl('activities', ['record' => $record])),
+
                     EditAction::make()
                         ->label('Edit')
-                        // Nonaktifkan tombol kalau sudah ada transaksi (UX jelas)
-                        ->disabled(fn(ProductVariant $record) => $record->transactions()->exists())
-                        ->tooltip(
-                            fn(ProductVariant $record) =>
-                            $record->transactions()->exists()
+                        ->disabled(fn (ProductVariant $r) => self::blockedByTransactions($r))
+                        ->tooltip(fn (ProductVariant $r) => self::blockedByTransactions($r)
                             ? 'Varian ini sudah memiliki transaksi dan tidak bisa diedit.'
-                            : null
-                        )
-                        // Validasi server-side saat submit
+                            : null)
                         ->action(function (ProductVariant $record, array $data, EditAction $action) {
-                            if ($record->transactions()->exists()) {
-                                Notification::make()
-                                    ->title('Tidak bisa diedit')
-                                    ->body('Varian ini sudah memiliki transaksi.')
-                                    ->danger()
-                                    ->send();
-
+                            if (self::blockedByTransactions($record)) {
+                                self::notify('Tidak bisa diedit', 'Varian ini sudah memiliki transaksi.', true);
                                 $action->halt();
                                 return;
                             }
 
                             $record->update($data);
-
-                            Notification::make()
-                                ->title('Varian diperbarui')
-                                ->success()
-                                ->send();
+                            self::notify('Varian diperbarui');
                         }),
 
-                    // === DELETE (row) ===
                     DeleteAction::make()
                         ->label('Hapus')
                         ->requiresConfirmation()
-                        ->disabled(fn(ProductVariant $record) => $record->transactions()->exists())
-                        ->tooltip(
-                            fn(ProductVariant $record) =>
-                            $record->transactions()->exists()
+                        ->disabled(fn (ProductVariant $r) => self::blockedByTransactions($r))
+                        ->tooltip(fn (ProductVariant $r) => self::blockedByTransactions($r)
                             ? 'Varian ini sudah memiliki transaksi dan tidak bisa dihapus.'
-                            : null
-                        )
+                            : null)
                         ->action(function (ProductVariant $record, DeleteAction $action) {
-                            if ($record->transactions()->exists()) {
-                                Notification::make()
-                                    ->title('Tidak bisa dihapus')
-                                    ->body('Varian ini sudah memiliki transaksi.')
-                                    ->danger()
-                                    ->send();
-
+                            if (self::blockedByTransactions($record)) {
+                                self::notify('Tidak bisa dihapus', 'Varian ini sudah memiliki transaksi.', true);
                                 $action->halt();
                                 return;
                             }
 
                             $record->delete();
-
-                            Notification::make()
-                                ->title('Varian dihapus')
-                                ->success()
-                                ->send();
+                            self::notify('Varian dihapus');
                         }),
-                ])
+
+                    RestoreAction::make(),
+
+                    ReplicateAction::make('replicate')
+                        ->label('Duplikasi')
+                        ->mutateRecordDataUsing(function (array $data): array {
+                            $data['sku_variant'] = ProductVariant::generateUniqueSkuVariant(
+                                productSku: $data['product']['sku'] ?? null,
+                                color: $data['color'] ?? null,
+                                size: $data['size'] ?? null,
+                            );
+                            unset($data['deleted_at']);
+
+                            return $data;
+                        })
+                        ->form([
+                            Hidden::make('product_id')
+                                ->default(fn ($record) => $record?->product_id)
+                                ->dehydrated(),
+
+                            Section::make()
+                                ->schema([
+                                    TextInput::make('sku_variant')
+                                        ->label('SKU Varian')
+                                        ->required()
+                                        ->maxLength(64)
+                                        ->default(fn (array $data) => ProductVariant::generateUniqueSkuVariant(
+                                            productSku: $data['product']['sku'] ?? null,
+                                            color: $data['color'] ?? null,
+                                            size: $data['size'] ?? null,
+                                        ))
+                                        ->unique(table: ProductVariant::class, column: 'sku_variant'),
+
+                                    TextInput::make('color')
+                                        ->label('Warna')
+                                        ->maxLength(50)
+                                        ->live(onBlur: true),
+
+                                    Select::make('size')
+                                        ->label('Ukuran')
+                                        ->options(fn () => array_combine(ProductVariant::SIZES, ProductVariant::SIZES))
+                                        ->required()
+                                        ->searchable()
+                                        ->rules(fn (Get $get) => [
+                                            Rule::in(ProductVariant::SIZES),
+                                            Rule::unique('product_variants', 'size')->where(
+                                                fn ($q) => $q
+                                                    ->where('product_id', $get('product_id'))
+                                                    ->where('color', $get('color'))
+                                                    ->whereNull('deleted_at')
+                                            ),
+                                        ])
+                                        ->validationMessages([
+                                            'in' => 'Ukuran tidak valid. Pilih salah satu: ' . implode(', ', ProductVariant::SIZES),
+                                            'unique' => 'Kombinasi Produk + Warna + Ukuran sudah dipakai.',
+                                        ]),
+                                ])->columns(2),
+                        ]),
+
+                    ForceDeleteAction::make(),
+                ]),
             ])
 
             ->toolbarActions([
                 BulkActionGroup::make([
-                    // === BULK DELETE ===
                     DeleteBulkAction::make()
                         ->label('Hapus Terpilih')
                         ->requiresConfirmation()
                         ->action(function (Collection $records) {
-                            // Pisahkan yang terblokir dan yang aman dihapus
-                            $blocked = $records->filter(
-                                fn(ProductVariant $r) => $r->transactions()->exists()
-                            );
-                            $deletable = $records->reject(
-                                fn(ProductVariant $r) => $r->transactions()->exists()
+                            [$blocked, $deletable] = $records->partition(
+                                fn (ProductVariant $r) => self::blockedByTransactions($r)
                             );
 
-                            // Hapus yang aman
                             if ($deletable->isNotEmpty()) {
                                 $deletable->each->delete();
-
-                                Notification::make()
-                                    ->title('Varian tanpa transaksi dihapus')
-                                    ->success()
-                                    ->send();
+                                self::notify('Varian tanpa transaksi dihapus');
                             }
 
-                            // Beri tahu yang tidak dihapus
                             if ($blocked->isNotEmpty()) {
-                                $list = $blocked->map(function (ProductVariant $r) {
-                                    // Sesuaikan field identitas varian agar informatif
-                                    return $r->sku_variant ?? $r->id;
-                                })->join(', ');
+                                $list = $blocked
+                                    ->map(fn (ProductVariant $r) => $r->sku_variant ?? $r->id)
+                                    ->join(', ');
 
-                                Notification::make()
-                                    ->title('Sebagian tidak dihapus')
-                                    ->body('Varian berikut tidak dihapus karena memiliki transaksi: ' . $list)
-                                    ->danger()
-                                    ->send();
+                                self::notify(
+                                    'Sebagian tidak dihapus',
+                                    'Varian berikut tidak dihapus karena memiliki transaksi: ' . $list,
+                                    true
+                                );
                             }
                         })
                         ->deselectRecordsAfterCompletion(),
+
+                    ForceDeleteBulkAction::make(),
+                    RestoreBulkAction::make(),
                 ]),
             ]);
+    }
+
+    /** Helper: cek blokir karena ada transaksi */
+    protected static function blockedByTransactions(ProductVariant $record): bool
+    {
+        return $record->transactions()->exists();
+    }
+
+    /** Helper: notifikasi ringkas */
+    protected static function notify(string $title, ?string $body = null, bool $danger = false): void
+    {
+        Notification::make()
+            ->title($title)
+            ->when($body, fn ($n) => $n->body($body))
+            ->{ $danger ? 'danger' : 'success' }()
+            ->send();
     }
 }

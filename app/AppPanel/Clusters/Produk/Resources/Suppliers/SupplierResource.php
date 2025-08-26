@@ -5,6 +5,7 @@ namespace App\AppPanel\Clusters\Produk\Resources\Suppliers;
 use App\AppPanel\Clusters\Produk\ProdukCluster;
 use App\AppPanel\Clusters\Produk\Resources\Suppliers\Pages\ListSupplierActivities;
 use App\AppPanel\Clusters\Produk\Resources\Suppliers\Pages\ManageSuppliers;
+use App\AppPanel\Clusters\Produk\Resources\Suppliers\Schema\Form;
 use App\Models\Inventory\Supplier;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -17,21 +18,19 @@ use Filament\Actions\ForceDeleteAction;
 use Filament\Actions\ForceDeleteBulkAction;
 use Filament\Actions\RestoreAction;
 use Filament\Actions\RestoreBulkAction;
-use Filament\Forms\Components\TextInput;
-use Filament\Forms\Components\Toggle;
+use Filament\Forms\Components\DatePicker;
 use Filament\Resources\Resource;
-use Filament\Schemas\Components\Grid;
-use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
-use Filament\Tables\Columns\BadgeColumn;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Enums\FiltersLayout;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
-use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Auth;
 
 class SupplierResource extends Resource
@@ -57,73 +56,7 @@ class SupplierResource extends Resource
     public static function form(Schema $schema): Schema
     {
         return $schema
-            ->components([
-                Section::make('Data Pemasok')
-                    ->columns(3)
-                    ->schema([
-                        TextInput::make('code')
-                            ->label('Kode')
-                            ->maxLength(32)
-                            ->required()
-                            ->unique(ignoreRecord: true)
-                            ->default(fn() => App::environment(['local', 'debug']) ? fake()->unique()->numerify('CODE-#####') : null),
-                        TextInput::make('name')
-                            ->label('Nama')
-                            ->maxLength(150)
-                            ->required()
-                            ->unique(ignoreRecord: true)
-                            ->default(fn() => App::environment(['local', 'debug']) ? fake()->company() : null),
-                        Toggle::make('is_active')
-                            ->label('Aktif')
-                            ->default(true),
-                        TextInput::make('contact_name')
-                            ->label('PIC')
-                            ->maxLength(150)
-                            ->default(fn() => App::environment(['local', 'debug']) ? fake()->name() : null),
-                        TextInput::make('phone')
-                            ->label('Telepon')
-                            ->maxLength(32)
-                            ->default(fn() => App::environment(['local', 'debug']) ? fake()->phoneNumber() : null),
-                        TextInput::make('email')
-                            ->email()
-                            ->default(fn() => App::environment(['local', 'debug']) ? fake()->unique()->safeEmail() : null),
-                    ])
-                    ->columnSpanFull(),
-                Section::make('Alamat')
-                    ->columns(3)
-                    ->schema([
-                        TextInput::make('address')
-                            ->label('Alamat')
-                            ->columnSpan(3)
-                            ->default(fn() => App::environment(['local', 'debug']) ? fake()->streetAddress() : null),
-                        TextInput::make('district')
-                            ->label('Kecamatan')
-                            ->default(fn() => App::environment(['local', 'debug']) ? fake()->citySuffix() : null),
-                        TextInput::make('city')
-                            ->label('Kota')
-                            ->default(fn() => App::environment(['local', 'debug']) ? fake()->city() : null),
-                        TextInput::make('province')
-                            ->label('Provinsi')
-                            ->default(fn() => App::environment(['local', 'debug']) ? fake()->state() : null),
-                        TextInput::make('postal_code')
-                            ->label('Kode Pos')
-                            ->maxLength(16)
-                            ->default(fn() => App::environment(['local', 'debug']) ? fake()->postcode() : null),
-                        Grid::make(2)
-                            ->schema([
-                                TextInput::make('lat')
-                                    ->numeric()
-                                    ->label('Latitude')
-                                    ->default(fn() => App::environment(['local', 'debug']) ? fake()->latitude() : null),
-                                TextInput::make('lng')
-                                    ->numeric()
-                                    ->label('Longitude')
-                                    ->default(fn() => App::environment(['local', 'debug']) ? fake()->longitude() : null),
-                            ])
-                            ->columnSpanFull(),
-                    ])
-                    ->columnSpanFull(),
-            ]);
+            ->components(Form::schemaForm());
     }
 
     public static function table(Table $table): Table
@@ -142,8 +75,37 @@ class SupplierResource extends Resource
                 TextColumn::make('created_at')->dateTime('d M Y H:i')->label('Dibuat')->sortable()->toggleable(),
             ])
             ->filters([
+                TernaryFilter::make('is_active')
+                    ->label('Status')
+                    ->placeholder('Semua')
+                    ->trueLabel('Aktif')
+                    ->falseLabel('Nonaktif')
+                    ->queries(
+                        true: fn($q) => $q->where('is_active', true),
+                        false: fn($q) => $q->where('is_active', false),
+                        blank: fn($q) => $q,
+                    ),
+                Filter::make('payment_date')
+                    ->form([
+                        DatePicker::make('min_date')
+                            ->label('Tanggal mulai'),
+                        DatePicker::make('max_date')
+                            ->label('Tanggal selesai'),
+                    ])
+                    ->columns(2)
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when(
+                                $data['min_date'],
+                                fn(Builder $query, $date): Builder => $query->whereDate('created_at', '>=', $date),
+                            )
+                            ->when(
+                                $data['max_date'],
+                                fn(Builder $query, $date): Builder => $query->whereDate('created_at', '<=', $date),
+                            );
+                    }),
                 TrashedFilter::make(),
-            ])
+            ], layout: FiltersLayout::AboveContent)
             ->recordActions([
                 ActionGroup::make([
                     Action::make('activities')

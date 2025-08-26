@@ -10,7 +10,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
 
 class ProductImage extends Model
 {
-    use SoftDeletes, LogsActivity;
+    use SoftDeletes, LogsActivity, SoftDeletes;
 
     protected $fillable = [
         'product_id','image_path','is_primary','sort_order',

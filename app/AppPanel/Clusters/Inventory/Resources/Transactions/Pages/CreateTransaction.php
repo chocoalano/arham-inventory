@@ -96,7 +96,6 @@ class CreateTransaction extends CreateRecord
                 'transaction_date' => $occurredAt,
                 'source_warehouse_id' => $headerSource ?: null,
                 'destination_warehouse_id' => $headerDest ?: null,
-                'supplier_id' => $data['supplier_id'] ?? null,
                 'customer_name' => $data['customer_name'] ?? null,
                 'customer_phone' => $data['customer_phone'] ?? null,
                 'customer_full_address' => $data['customer_full_address'] ?? null,

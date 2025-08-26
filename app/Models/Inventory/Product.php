@@ -9,12 +9,13 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
 class Product extends Model
 {
-    use SoftDeletes, LogsActivity;
+    use SoftDeletes, LogsActivity, SoftDeletes;
 
     protected $fillable = [
         'supplier_id',
@@ -29,6 +30,17 @@ class Product extends Model
     protected $casts = [
         'is_active' => 'bool',
     ];
+
+    protected static function booted(): void
+    {
+        static::creating(function (self $product) {
+            if (blank($product->sku)) {
+                // seed diambil dari brand/model/name agar SKU “bermakna”
+                $seed = trim(($product->brand ? $product->brand . ' ' : '') . ($product->model ?: $product->name));
+                $product->sku = self::generateUniqueSku($seed);
+            }
+        });
+    }
 
     public function supplier(): BelongsTo
     {
@@ -131,5 +143,47 @@ class Product extends Model
             ->logFillable()                 // log semua field fillable
             ->useLogName('produk')          // nama log
             ->dontSubmitEmptyLogs();        // hindari log kosong
+    }
+
+    public static function generateUniqueSku(?string $seed = null, int $maxLen = 64): string
+    {
+        // 1) Bentuk BASE dari seed yang “bermakna”
+        $base = strtoupper(Str::slug((string) $seed, '-'));
+        if ($base === '') {
+            // fallback: ambil inisial brand+model+name kalau ada, atau 'PRD'
+            $base = 'PRD';
+        }
+
+        // 2) Suffix tanggal & random 4 char (base36)
+        $date   = now()->format('ymd');
+        $rand4  = strtoupper(Str::random(4)); // quick & readable
+        $sep    = '-';
+
+        // 3) Pastikan total panjang <= $maxLen (BASE + 1 + YYMMDD + 1 + RAND4)
+        $staticSuffix = "{$sep}{$date}{$sep}{$rand4}";
+        $allowBaseLen = max(1, $maxLen - mb_strlen($staticSuffix));
+        $baseTrimmed  = mb_substr($base, 0, $allowBaseLen);
+
+        $candidate = "{$baseTrimmed}{$staticSuffix}";
+
+        // 4) Cek keunikan; jika tabrakan, tambah -{RAND4} ulang (loop aman)
+        $tries = 0;
+        while (static::query()->where('sku', $candidate)->exists()) {
+            $rand4  = strtoupper(Str::random(4));
+            $staticSuffix = "{$sep}{$date}{$sep}{$rand4}";
+            $allowBaseLen = max(1, $maxLen - mb_strlen($staticSuffix));
+            $baseTrimmed  = mb_substr($base, 0, $allowBaseLen);
+            $candidate    = "{$baseTrimmed}{$staticSuffix}";
+
+            if (++$tries > 25) {
+                // last resort: sku random tapi tetap pendek & unik
+                $candidate = 'PRD-' . strtoupper(Str::random(10));
+                if (! static::query()->where('sku', $candidate)->exists()) {
+                    break;
+                }
+            }
+        }
+
+        return $candidate;
     }
 }

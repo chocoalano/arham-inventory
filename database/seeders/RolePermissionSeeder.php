@@ -17,13 +17,26 @@ class RolePermissionSeeder extends Seeder
      * Aksi standar per resource.
      */
     private const ACTIONS = [
-        'viewAny',   // lihat daftar
-        'view',      // lihat detail
-        'create',
-        'update',    // (hindari "edit" -> konsisten dengan policy Laravel)
-        'delete',
-        'deleteAny', // hapus massal
+        'viewAny',          // Lihat daftar (index/list)
+        'view',             // Lihat detail 1 data
+        'create',           // Membuat data baru
+        'update',           // Mengubah data yang sudah ada
+
+        'delete',           // Menghapus 1 data (soft delete)
+        'deleteAny',        // Hapus massal (soft delete)
+        'restore',          // Restore 1 data dari soft delete
+        'restoreAny',       // Restore massal dari soft delete
+
+        'forceDelete',      // Hapus permanen 1 data (bypass soft delete)
+        'forceDeleteAny',   // Hapus permanen massal
+
+        'replicate',        // Duplikasi/replicate record
+        'reorder',          // Reorder/drag-sort record (jika resource mendukung)
+
+        'export',           // Ekspor data (CSV/Excel dsb.; custom di project)
+        'import',           // Impor data (CSV/Excel dsb.; custom di project)
     ];
+
 
     /**
      * Daftar resource yang diberi permission.
@@ -37,6 +50,7 @@ class RolePermissionSeeder extends Seeder
         'payment',
         'transaction',
         'warehouse',
+        'supplier',
     ];
 
     public function run(): void
@@ -44,19 +58,21 @@ class RolePermissionSeeder extends Seeder
         DB::transaction(function () {
 
             // 1) BUAT / UPDATE ROLES (idempotent)
-            $adminRole  = Role::firstOrCreate(['name' => 'admin'],  [
+            $superadminRole = Role::firstOrCreate(['name' => 'Superadmin'], [
+                'label' => 'Superadmin',
+                'desc' => 'Akses penuh ke sistem.',
+            ]);
+            $adminRole = Role::firstOrCreate(['name' => 'admin'], [
                 'label' => 'Administrator',
-                'desc'  => 'Akses penuh ke sistem.',
-            ]);
-
-            $editorRole = Role::firstOrCreate(['name' => 'editor'], [
-                'label' => 'Editor Konten',
-                'desc'  => 'Mengelola data master & konten.',
-            ]);
-
-            $userRole   = Role::firstOrCreate(['name' => 'user'],   [
-                'label' => 'Pengguna',
-                'desc'  => 'Akses dasar sebagai pengguna.',
+                'desc' => '
+                Akses transaksi(CRUD Penjualan), Update=>hanya bisa max 1 jam setelah data transaksi dibuat,
+                Akses transaksi(CRUD Perpindahan produk antar gudang), Update=>hanya bisa max 1 jam setelah data transaksi dibuat,
+                Akses transaksi(CRUD Pengembalian produk), Update=>hanya bisa max 1 jam setelah data transaksi dibuat,
+                Cetak faktur faktur penjualan & packing slip,
+                Read Only produk/varian produk,
+                read & update profile,
+                Data yang ditampilkan hanya data sesuai current area.
+                ',
             ]);
 
             // 2) BUAT GROUP & PERMISSIONS per resource (idempotent)
@@ -87,67 +103,60 @@ class RolePermissionSeeder extends Seeder
 
             // 3) ASSIGN PERMISSIONS KE ROLES
             // Admin -> semua permission
-            $adminRole->permissions()->sync($allPermissionIds);
+            $superadminRole->permissions()->sync($allPermissionIds);
 
             // Editor -> full product & variant, bisa lihat invoice/payment/warehouse
-            $editorPerms = Permission::query()
-                ->whereIn('name', function ($q) {
-                    $q->select('name')
-                      ->from('permissions');
-                })
+            $adminPerms = Permission::query()
                 ->where(function ($q) {
                     // full untuk product & product_variant
                     $q->whereIn('permission_group_id', PermissionGroup::query()
-                        ->whereIn('name', ['product', 'product_variant'])
+                        ->whereIn('name', ['transaction'])
                         ->pluck('id'))
-                      // viewAny/view untuk invoice, payment, warehouse
-                      ->orWhereIn('name', [
-                          'viewAny-invoice','view-invoice',
-                          'viewAny-payment','view-payment',
-                          'viewAny-warehouse','view-warehouse',
-                      ]);
+                        // viewAny/view untuk invoice, payment, warehouse
+                        ->orWhereIn('name', [
+                            'viewAny-invoice',
+                            'view-invoice',
+                            'print-invoice',
+                            'viewAny-payment',
+                            'view-payment',
+                            'print-payment',
+                            'viewAny-warehouse',
+                            'view-warehouse',
+                        ]);
                 })
                 ->pluck('id')
                 ->all();
 
-            $editorRole->permissions()->sync($editorPerms);
+            $adminRole->permissions()->sync($adminPerms);
 
-            // User -> hanya view produk & variant
-            $userPerms = Permission::query()
-                ->whereIn('name', [
-                    'viewAny-product','view-product',
-                    'viewAny-product_variant','view-product_variant',
-                ])
-                ->pluck('id')
-                ->all();
 
-            $userRole->permissions()->sync($userPerms);
-
-            // 4) USER DUMMY (aman diulang)
-            // (Opsional: batasi ke local/testing)
-            $adminUser = User::updateOrCreate(
-                ['email' => 'admin@example.com'],
-                ['name' => 'Admin User', 'password' => Hash::make('password')]
+            $superadminUser = User::updateOrCreate(
+                ['email' => 'superadmin@example.com'],
+                [
+                    'name' => 'Superadmin User',
+                    'password' => Hash::make('password'),
+                    'email_verified_at' => now()
+                    ]
             );
-            $adminUser->roles()->syncWithoutDetaching([$adminRole->id]);
-
-            $editorUser = User::updateOrCreate(
-                ['email' => 'editor@example.com'],
-                ['name' => 'Editor User', 'password' => Hash::make('password')]
+            $superadminUser->roles()->syncWithoutDetaching([$superadminRole->id]);
+            $admin1User = User::updateOrCreate(
+                ['email' => 'admin1@example.com'],
+                [
+                    'name' => 'Admin1 User',
+                    'password' => Hash::make('password'),
+                    'email_verified_at' => now()
+                    ]
             );
-            $editorUser->roles()->syncWithoutDetaching([$editorRole->id]);
-
-            $regularUser = User::updateOrCreate(
-                ['email' => 'user@example.com'],
-                ['name' => 'Regular User', 'password' => Hash::make('password')]
+            $admin1User->roles()->syncWithoutDetaching([$adminRole->id]);
+            $admin2User = User::updateOrCreate(
+                ['email' => 'admin2@example.com'],
+                [
+                    'name' => 'Admin2 User',
+                    'password' => Hash::make('password'),
+                    'email_verified_at' => now()
+                    ]
             );
-            $regularUser->roles()->syncWithoutDetaching([$userRole->id]);
-
-            // Hindari memberi izin yang tidak relevan ke user biasa.
-            // Jika perlu izin langsung:
-            // $regularUser->permissions()->syncWithoutDetaching(
-            //     Permission::where('name', 'viewAny-product')->pluck('id')
-            // );
+            $admin2User->roles()->syncWithoutDetaching([$adminRole->id]);
         });
     }
 
@@ -159,13 +168,20 @@ class RolePermissionSeeder extends Seeder
         $resourceLabel = Str::headline($resource);
 
         return match ($action) {
-            'viewAny'   => "Lihat Daftar {$resourceLabel}",
-            'view'      => "Lihat {$resourceLabel}",
-            'create'    => "Buat {$resourceLabel}",
-            'update'    => "Ubah {$resourceLabel}",
-            'delete'    => "Hapus {$resourceLabel}",
-            'deleteAny' => "Hapus Massal {$resourceLabel}",
-            default     => Str::headline("{$action} {$resourceLabel}"),
+            'viewAny'         => "Lihat Daftar {$resourceLabel}",
+            'view'            => "Lihat {$resourceLabel}",
+            'create'          => "Buat {$resourceLabel}",
+            'update'          => "Ubah {$resourceLabel}",
+            'delete'          => "Hapus {$resourceLabel}",
+            'deleteAny'       => "Hapus Massal {$resourceLabel}",
+            'forceDelete',    => "Menghapus permanen 1 data (skip recycle bin/soft delete) {$resourceLabel}",
+            'forceDeleteAny', => "Menghapus permanen banyak data sekaligus {$resourceLabel}",
+            'restore',        => "Mengembalikan data yang dihapus (soft delete -> aktif kembali) {$resourceLabel}",
+            'restoreAny',     => "Mengembalikan banyak data yang dihapus (opsional jika mau konsisten) {$resourceLabel}",
+            'export',         => "Mengekspor data (misalnya ke Excel/CSV) {$resourceLabel}",
+            'import',         => "Mengimpor data (misalnya dari Excel/CSV) {$resourceLabel}",
+            'print',          => "Mencetak/export pdf {$resourceLabel}",
+            default => Str::headline("{$action} {$resourceLabel}"),
         };
     }
 }

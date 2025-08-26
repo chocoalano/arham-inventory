@@ -14,6 +14,11 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Actions\ForceDeleteAction;
+use Filament\Actions\ForceDeleteBulkAction;
+use Filament\Actions\ReplicateAction;
+use Filament\Actions\RestoreAction;
+use Filament\Actions\RestoreBulkAction;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Select;
@@ -27,8 +32,10 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\Summarizers\Sum;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
@@ -140,7 +147,7 @@ class PaymentResource extends Resource
                             ->label('Tanggal Minimum'),
                         DatePicker::make('max_date')
                             ->label('Tanggal Maksimum'),
-                    ])
+                    ])->columns(2)
                     ->query(function (Builder $query, array $data): Builder {
                         return $query
                             ->when(
@@ -152,7 +159,8 @@ class PaymentResource extends Resource
                                 fn(Builder $query, $date): Builder => $query->whereDate('payment_date', '<=', $date),
                             );
                     }),
-            ])
+                TrashedFilter::make(),
+            ], layout: FiltersLayout::AboveContent)
             ->recordActions([
                 ActionGroup::make([
                     Action::make('activities')
@@ -163,11 +171,16 @@ class PaymentResource extends Resource
                         ->url(fn($record): string => PaymentResource::getUrl('activities', ['record' => $record])),
                     EditAction::make(),
                     DeleteAction::make(),
+                    RestoreAction::make(),
+                    ReplicateAction::make(),
+                    ForceDeleteAction::make()
                 ])
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
                     DeleteBulkAction::make(),
+                    ForceDeleteBulkAction::make(),
+                    RestoreBulkAction::make()
                 ]),
             ]);
     }

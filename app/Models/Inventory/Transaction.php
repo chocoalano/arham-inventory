@@ -14,7 +14,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
 
 class Transaction extends Model
 {
-    use SoftDeletes, LogsActivity;
+    use SoftDeletes, LogsActivity, SoftDeletes;
 
     public const STATUS_DRAFT = 'draft';
     public const STATUS_POSTED = 'posted';
@@ -29,7 +29,6 @@ class Transaction extends Model
         'customer_name',
         'customer_phone',
         'customer_full_address',
-        'supplier_id',
         'item_count',
         'grand_total',
         'status',

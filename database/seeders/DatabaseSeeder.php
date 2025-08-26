@@ -19,14 +19,5 @@ class DatabaseSeeder extends Seeder
             RolePermissionSeeder::class,
             // InventorySeeder::class,
         ]);
-
-        // Catatan: Jika Anda tidak memerlukan user tambahan,
-        // Anda bisa menghapus atau mengomentari baris di bawah.
-        // Jika tidak, Anda dapat mengaktifkannya kembali.
-
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
     }
 }

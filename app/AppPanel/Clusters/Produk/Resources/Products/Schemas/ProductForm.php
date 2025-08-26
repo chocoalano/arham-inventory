@@ -2,6 +2,8 @@
 
 namespace App\AppPanel\Clusters\Produk\Resources\Products\Schemas;
 
+use App\AppPanel\Clusters\Produk\Resources\Suppliers\Schema\Form;
+use App\Models\Inventory\Product;
 use App\Models\Inventory\Supplier;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Repeater;
@@ -28,7 +30,8 @@ class ProductForm
                         ->schema([
                             Select::make('supplier_id')
                                 ->label('Supplier')
-                                ->options(fn() => Supplier::query()->orderBy('name')->pluck('name', 'id'))
+                                ->relationship('supplier', 'name')
+                                ->createOptionForm(Form::schemaForm())
                                 ->searchable()
                                 ->preload()
                                 ->nullable(),
@@ -36,7 +39,7 @@ class ProductForm
                                 ->label('SKU')
                                 ->required()
                                 ->unique()
-                                ->default(fn() => app()->environment(['local', 'debug']) ? strtoupper(Str::random(10)) : null), // Autofill dengan random string
+                                ->default(Product::generateUniqueSku()),
                             Toggle::make('is_active')
                                 ->label('Aktif')
                                 ->default(true),

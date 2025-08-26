@@ -3,10 +3,14 @@
 namespace App\AppPanel\Clusters\Inventory\Resources\InventoryMovements\Pages;
 
 use App\AppPanel\Clusters\Inventory\Resources\InventoryMovements\InventoryMovementResource;
+use App\Filament\Exports\InventoryMovementExporter;
+use App\Filament\Imports\InventoryMovementImporter;
 use App\Models\Inventory\ProductVariant;
 use App\Models\Inventory\Transaction;
 use App\Models\Inventory\WarehouseVariantStock;
 use Filament\Actions\CreateAction;
+use Filament\Actions\ExportAction;
+use Filament\Actions\ImportAction;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ManageRecords;
 use Illuminate\Database\Eloquent\Model;
@@ -129,7 +133,9 @@ class ManageInventoryMovements extends ManageRecords
                         DB::rollBack();
                         throw $ve;
                     }
-                })
+                }),
+            ImportAction::make()->importer(InventoryMovementImporter::class),
+            ExportAction::make()->exporter(InventoryMovementExporter::class)
         ];
     }
 }

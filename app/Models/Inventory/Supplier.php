@@ -10,7 +10,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
 
 class Supplier extends Model
 {
-    use SoftDeletes, LogsActivity;
+    use SoftDeletes, LogsActivity, SoftDeletes;
 
     protected $fillable = [
         'code','name','contact_name','phone','email',

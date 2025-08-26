@@ -3,6 +3,7 @@
 namespace App\AppPanel\Clusters\Produk\Resources\ProductVariants\Schemas;
 
 use App\Models\Inventory\Product;
+use App\Models\Inventory\ProductVariant;
 use App\Models\Inventory\Supplier;
 use App\Models\Inventory\Warehouse;
 use Filament\Actions\Action;
@@ -12,7 +13,6 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
-use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
@@ -25,8 +25,6 @@ class ProductVariantForm
 {
     public static function configure(Schema $schema): Schema
     {
-        $sizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL'];
-
         return $schema->components([
             Section::make('Varian Produk')
                 ->description('Detail spesifik untuk varian produk, termasuk kode unik, warna, dan ukuran.')
@@ -128,7 +126,7 @@ class ProductVariantForm
                     Select::make('size')
                         ->label('Ukuran')
                         ->helperText('Pilih ukuran untuk varian ini. Kombinasi Produk + Warna + Ukuran harus unik untuk setiap varian.')
-                        ->options(array_combine($sizes, $sizes))
+                        ->options(array_combine(ProductVariant::SIZES, ProductVariant::SIZES))
                         ->required()
                         ->live()
                         ->afterStateUpdated(fn(Set $set, Get $get) => self::maybeAutofillSku($set, $get, true))

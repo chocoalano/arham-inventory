@@ -9,12 +9,16 @@ use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
+use Filament\Actions\ForceDeleteAction;
 use Filament\Actions\ForceDeleteBulkAction;
+use Filament\Actions\ReplicateAction;
+use Filament\Actions\RestoreAction;
 use Filament\Actions\RestoreBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 
 use Filament\Tables;
+use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\IconColumn;
@@ -28,6 +32,7 @@ use Filament\Tables\Filters\TrashedFilter;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\DatePicker;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 
 class UsersTable
@@ -93,26 +98,26 @@ class UsersTable
             ])
 
             ->filters([
-                // Filter verified / unverified / any
+                // 1) Status verifikasi email
                 TernaryFilter::make('verified')
-                    ->label('Email Verified')
+                    ->label('Email Terverifikasi')
                     ->placeholder('Semua')
                     ->trueLabel('Terverifikasi')
-                    ->falseLabel('Belum verifikasi')
+                    ->falseLabel('Belum Terverifikasi')
                     ->queries(
-                        true: fn(Builder $query) => $query->whereNotNull('email_verified_at'),
-                        false: fn(Builder $query) => $query->whereNull('email_verified_at'),
-                        blank: fn(Builder $query) => $query
+                        true: fn(Builder $q) => $q->whereNotNull('email_verified_at'),
+                        false: fn(Builder $q) => $q->whereNull('email_verified_at'),
+                        blank: fn(Builder $q) => $q,
                     ),
 
-                // Filter berdasarkan role (butuh relasi roles() di model User)
+                // 2) Role (butuh relasi roles() di model User)
                 SelectFilter::make('roles')
                     ->label('Role')
+                    ->relationship('roles', 'name')
                     ->multiple()
-                    ->preload()
-                    ->relationship('roles', 'name'),
+                    ->preload(),
 
-                // Filter domain email sederhana (@gmail.com, @company.com)
+                // 3) Domain email (gmail.com, company.com, dll.)
                 Filter::make('email_domain')
                     ->label('Domain Email')
                     ->form([
@@ -120,39 +125,44 @@ class UsersTable
                             ->placeholder('contoh: gmail.com')
                             ->datalist(['gmail.com', 'yahoo.com', 'outlook.com']),
                     ])
-                    ->query(function (Builder $query, array $data) {
-                        if (filled($data['domain'] ?? null)) {
-                            $domain = ltrim($data['domain'], '@');
-                            $query->where('email', 'like', "%@{$domain}");
+                    ->query(function (Builder $q, array $data) {
+                        $domain = trim(ltrim($data['domain'] ?? '', '@'));
+                        if ($domain !== '') {
+                            $q->where('email', 'like', "%@{$domain}");
                         }
-                    }),
+                    })
+                    ->indicateUsing(fn(array $data) => filled($data['domain'] ?? null)
+                        ? ['Domain: ' . ltrim($data['domain'], '@')]
+                        : []),
 
-                // Filter rentang tanggal dibuat
+                // 4) Rentang tanggal dibuat
                 Filter::make('created_between')
-                    ->label('Dibuat antara')
+                    ->label('Dibuat Antara')
                     ->form([
-                        DatePicker::make('from')->native(false),
-                        DatePicker::make('until')->native(false),
-                    ])
-                    ->query(function (Builder $query, array $data) {
-                        return $query
-                            ->when(filled($data['from'] ?? null), fn($q) => $q->whereDate('created_at', '>=', $data['from']))
-                            ->when(filled($data['until'] ?? null), fn($q) => $q->whereDate('created_at', '<=', $data['until']));
+                        DatePicker::make('from')->label('Dari')->native(false),
+                        DatePicker::make('until')->label('Sampai')->native(false),
+                    ])->columns(2)
+                    ->query(function (Builder $q, array $data) {
+                        return $q
+                            ->when(filled($data['from'] ?? null), fn($qq) => $qq->whereDate('created_at', '>=', $data['from']))
+                            ->when(filled($data['until'] ?? null), fn($qq) => $qq->whereDate('created_at', '<=', $data['until']));
                     })
                     ->indicateUsing(function (array $data): array {
-                        $indicators = [];
+                        $badges = [];
                         if (filled($data['from'] ?? null)) {
-                            $indicators[] = 'Dari: ' . \Illuminate\Support\Carbon::parse($data['from'])->format('d M Y');
+                            $badges[] = 'Dari: ' . Carbon::parse($data['from'])->format('d M Y');
                         }
                         if (filled($data['until'] ?? null)) {
-                            $indicators[] = 'Sampai: ' . \Illuminate\Support\Carbon::parse($data['until'])->format('d M Y');
+                            $badges[] = 'Sampai: ' . Carbon::parse($data['until'])->format('d M Y');
                         }
-                        return $indicators;
+                        return $badges;
                     }),
 
-                // Aktifkan ini hanya jika model User pakai SoftDeletes
-                // TrashedFilter::make(),
-            ])
+                // 5) Terhapus (SoftDeletes)
+                // Menampilkan: Tanpa Terhapus / Hanya Terhapus / Dengan Terhapus
+                TrashedFilter::make()
+                    ->label('Data Terhapus'),
+            ], layout: FiltersLayout::AboveContent)
 
             ->recordActions([
                 ActionGroup::make([
@@ -166,12 +176,30 @@ class UsersTable
                     EditAction::make()
                         ->visible(fn(): bool => auth()->user()?->can('update', User::class) ?? true),
                     DeleteAction::make(),
+                    RestoreAction::make(),
+                    ReplicateAction::make()
+                        ->mutateRecordDataUsing(function (array $data): array {
+                            $data['email'] = User::generateUniqueEmail($data['email'] ?? null); // ← pakai method model
+                            return $data;
+                        })
+                        ->form([
+                            TextInput::make('email')
+                                ->label('Alamat Email')
+                                ->helperText('Masukkan alamat email aktif yang valid.')
+                                ->email()
+                                ->required()
+                                ->default(fn(array $data) => User::generateUniqueEmail($data['email'] ?? null))
+                                ->unique(table: User::class, column: 'email'),
+                        ]),
+                    ForceDeleteAction::make()
                 ])
             ])
 
             ->bulkActions([
                 BulkActionGroup::make([
                     DeleteBulkAction::make(),
+                    ForceDeleteBulkAction::make(),
+                    RestoreBulkAction::make()
                 ]),
             ]);
     }

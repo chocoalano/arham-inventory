@@ -14,6 +14,11 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Actions\ForceDeleteAction;
+use Filament\Actions\ForceDeleteBulkAction;
+use Filament\Actions\ReplicateAction;
+use Filament\Actions\RestoreAction;
+use Filament\Actions\RestoreBulkAction;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -24,6 +29,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Enums\Width;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
@@ -86,7 +92,8 @@ class RoleResource extends Resource
                     ->searchable(),
             ])
             ->filters([
-                //
+                TrashedFilter::make()
+                    ->label('Data Terhapus'),
             ])
             ->recordActions([
                 ActionGroup::make([
@@ -129,7 +136,6 @@ class RoleResource extends Resource
 
                             $form->fill($state);
                         })
-
                         ->form(function (Model $record) {
                             // build schema (tanpa set state lagi)
                             $grouped = Permission::with('group')
@@ -170,7 +176,6 @@ class RoleResource extends Resource
                                     ]),
                             ];
                         })
-
                         ->action(function (Model $record, array $data) {
                             // gabungkan semua pilihan dari tiap group
                             $selected = collect($data['permissions_by_group'] ?? [])
@@ -185,11 +190,44 @@ class RoleResource extends Resource
                         }),
                     EditAction::make(),
                     DeleteAction::make(),
+                    RestoreAction::make(),
+                    ReplicateAction::make('replicate')
+                        ->label('Duplikasi')
+                        ->mutateRecordDataUsing(function (array $data): array {
+                            // hasil duplikasi harus punya name unik
+                            $data['name'] = Role::generateUniqueName($data['name'] ?? null);
+                            // opsional: isi label human-friendly dari name
+                            $data['label'] = Str::of($data['name'])->replace('-', ' ')->headline()->toString();
+                            return $data;
+                        })
+                        ->form([
+                            TextInput::make('name')
+                                ->label('Nama Peran (unik)')
+                                ->placeholder('mis: admin-sales')
+                                ->helperText('Huruf kecil, angka, dan tanda minus. Akan dibuat unik otomatis saat duplikasi.')
+                                ->required()
+                                ->maxLength(64)
+                                ->default(fn(array $data) => Role::generateUniqueName($data['name'] ?? null))
+                                ->rule('regex:/^[a-z0-9-]+$/')
+                                ->afterStateUpdated(fn($state, callable $set) => $set('name', Str::slug((string) $state, '-')))
+                                ->unique(table: Role::class, column: 'name'),
+                            TextInput::make('label')
+                                ->label('Label')
+                                ->placeholder('Administrator Sales')
+                                ->maxLength(150)
+                                ->default(fn(callable $get) => Str::of((string) $get('name'))
+                                    ->replace('-', ' ')
+                                    ->headline()
+                                    ->toString()),
+                        ]),
+                    ForceDeleteAction::make()
                 ])
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
                     DeleteBulkAction::make(),
+                    ForceDeleteBulkAction::make(),
+                    RestoreBulkAction::make()
                 ]),
             ]);
     }

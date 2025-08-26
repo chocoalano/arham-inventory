@@ -17,8 +17,9 @@ return new class extends Migration {
             $table->id();
             $table->string('name')->unique()->comment('Nama unik untuk peran (contoh: admin, editor)');
             $table->string('label')->nullable()->comment('Nama yang lebih mudah dibaca (contoh: Administrator)');
-            $table->string('desc')->nullable()->comment('Deskripsi singkat tentang peran');
+            $table->longText('desc')->nullable()->comment('Deskripsi singkat tentang peran');
             $table->timestamps();
+            $table->softDeletes();
         });
 
         // Tabel 'permission_groups'

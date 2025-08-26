@@ -19,6 +19,11 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Actions\ForceDeleteAction;
+use Filament\Actions\ForceDeleteBulkAction;
+use Filament\Actions\ReplicateAction;
+use Filament\Actions\RestoreAction;
+use Filament\Actions\RestoreBulkAction;
 use Filament\Forms\Components\Builder;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\DateTimePicker;
@@ -31,7 +36,9 @@ use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\TrashedFilter;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Filament\Tables\Table;
 use Illuminate\Support\Carbon;
@@ -253,6 +260,7 @@ class InventoryMovementResource extends Resource
                         DatePicker::make('from')->label('Dari Tanggal'),
                         DatePicker::make('until')->label('Sampai Tanggal'),
                     ])
+                    ->columns(2)
                     ->query(function (EloquentBuilder $query, array $data): EloquentBuilder {
                         return $query
                             ->when(
@@ -277,8 +285,9 @@ class InventoryMovementResource extends Resource
                         }
 
                         return $indicators;
-                    })
-            ])
+                    }),
+                TrashedFilter::make(),
+            ], layout: FiltersLayout::AboveContent)
             ->recordActions([
                 ActionGroup::make([
                     Action::make('activities')
@@ -296,13 +305,18 @@ class InventoryMovementResource extends Resource
                     // Mengubah label 'Edit' menjadi 'Ubah'
                     EditAction::make()->label('Ubah'),
                     // Mengubah label 'Delete' menjadi 'Hapus'
-                    DeleteAction::make()->label('Hapus'),
+                    DeleteAction::make(),
+                    RestoreAction::make(),
+                    ReplicateAction::make(),
+                    ForceDeleteAction::make()
                 ])
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
                     // Mengubah label 'Delete' menjadi 'Hapus Terpilih'
                     DeleteBulkAction::make()->label('Hapus Terpilih'),
+                    ForceDeleteBulkAction::make(),
+                    RestoreBulkAction::make()
                 ]),
             ]);
     }
