@@ -22,8 +22,12 @@ class ManageWarehouses extends ManageRecords
                 ->using(function (array $data, string $model): Model {
                     return $model::create($data);
                 }),
-            ImportAction::make()->importer(WarehouseImporter::class),
-            ExportAction::make()->exporter(WarehouseExporter::class)
+            ImportAction::make()
+                ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin') || auth()->user()?->hasPermissionTo('export-warehouse'))
+                ->importer(WarehouseImporter::class),
+            ExportAction::make()
+                ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin') || auth()->user()?->hasPermissionTo('export-warehouse'))
+                ->exporter(WarehouseExporter::class)
         ];
     }
 }

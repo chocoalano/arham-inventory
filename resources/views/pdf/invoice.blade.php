@@ -14,8 +14,8 @@
     // Gudang & pihak terkait
     $fromWhName = data_get($data, 'from_warehouse.name', '-');
     $fromWhCode = data_get($data, 'from_warehouse.code', null);
-    $toWhName = data_get($data, 'to_warehouse.name', '-');
-    $toWhCode = data_get($data, 'to_warehouse.code', null);
+    $toCsName = data_get($data, 'customer_name', '-');
+    $toCsAddress = data_get($data, 'customer_full_address', null);
 
     // Pembuat / creator
     $creator = data_get($data, 'creator.name', data_get($data, 'creator.username', '-'));
@@ -266,8 +266,12 @@
                             <td>: {{ $fromWhName }}{{ $fromWhCode ? ' (' . $fromWhCode . ')' : '' }}</td>
                         </tr>
                         <tr>
-                            <td class="muted">Ke Gudang</td>
-                            <td>: {{ $toWhName }}{{ $toWhCode ? ' (' . $toWhCode . ')' : '' }}</td>
+                            <td class="muted">Ke Pembeli</td>
+                            <td>: {{ $toCsName }}</td>
+                        </tr>
+                        <tr>
+                            <td class="muted">Alamat Pembeli</td>
+                            <td>: {{ $toCsAddress }}</td>
                         </tr>
                         <tr>
                             <td class="muted">Ref Transaksi</td>

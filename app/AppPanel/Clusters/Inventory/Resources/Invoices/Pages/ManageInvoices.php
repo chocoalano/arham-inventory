@@ -18,8 +18,12 @@ class ManageInvoices extends ManageRecords
     {
         return [
             CreateAction::make(),
-            ImportAction::make()->importer(InvoiceImporter::class),
-            ExportAction::make()->exporter(InvoiceExporter::class)
+            ImportAction::make()
+                ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin') || auth()->user()?->hasPermissionTo('export-invoice'))
+                ->importer(InvoiceImporter::class),
+            ExportAction::make()
+                ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin') || auth()->user()?->hasPermissionTo('export-invoice'))
+                ->exporter(InvoiceExporter::class)
         ];
     }
 }

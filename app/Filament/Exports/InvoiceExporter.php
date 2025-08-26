@@ -47,12 +47,9 @@ class InvoiceExporter extends Exporter
             ExportColumn::make('outstanding')->label('Outstanding'),
 
             // Metadata
-            ExportColumn::make('created_at')->label('Created At')
-                ->formatStateUsing(fn ($dt) => optional($dt)->format('Y-m-d H:i:s')),
-            ExportColumn::make('updated_at')->label('Updated At')
-                ->formatStateUsing(fn ($dt) => optional($dt)->format('Y-m-d H:i:s')),
-            ExportColumn::make('deleted_at')->label('Deleted At')
-                ->formatStateUsing(fn ($dt) => optional($dt)->format('Y-m-d H:i:s')),
+            ExportColumn::make('created_at')->label('Created At'),
+            ExportColumn::make('updated_at')->label('Updated At'),
+            ExportColumn::make('deleted_at')->label('Deleted At'),
         ];
     }
 

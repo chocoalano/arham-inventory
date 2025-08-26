@@ -134,8 +134,12 @@ class ManageInventoryMovements extends ManageRecords
                         throw $ve;
                     }
                 }),
-            ImportAction::make()->importer(InventoryMovementImporter::class),
-            ExportAction::make()->exporter(InventoryMovementExporter::class)
+            ImportAction::make()
+                ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin') || auth()->user()?->hasPermissionTo('import-transaction'))
+                ->importer(InventoryMovementImporter::class),
+            ExportAction::make()
+                ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin') || auth()->user()?->hasPermissionTo('export-transaction'))
+                ->exporter(InventoryMovementExporter::class)
         ];
     }
 }

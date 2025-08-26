@@ -18,8 +18,12 @@ class ManagePayments extends ManageRecords
     {
         return [
             CreateAction::make(),
-            ImportAction::make()->importer(PaymentImporter::class),
-            ExportAction::make()->exporter(PaymentExporter::class)
+            ImportAction::make()
+                ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin') || auth()->user()?->hasPermissionTo('export-payment'))
+                ->importer(PaymentImporter::class),
+            ExportAction::make()
+                ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin') || auth()->user()?->hasPermissionTo('export-payment'))
+                ->exporter(PaymentExporter::class)
         ];
     }
 }

@@ -144,9 +144,9 @@ class PaymentResource extends Resource
                 Filter::make('payment_date')
                     ->form([
                         DatePicker::make('min_date')
-                            ->label('Tanggal Minimum'),
+                            ->label('Tanggal Dari'),
                         DatePicker::make('max_date')
-                            ->label('Tanggal Maksimum'),
+                            ->label('Tanggal Sampai'),
                     ])->columns(2)
                     ->query(function (Builder $query, array $data): Builder {
                         return $query

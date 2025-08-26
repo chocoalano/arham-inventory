@@ -33,14 +33,11 @@ class WarehouseExporter extends Exporter
                 ->label('Active')
                 ->formatStateUsing(fn ($v) => $v ? 'Yes' : 'No'),
             ExportColumn::make('created_at')
-                ->label('Created At')
-                ->formatStateUsing(fn ($dt) => optional($dt)->format('Y-m-d H:i:s')),
+                ->label('Created At'),
             ExportColumn::make('updated_at')
-                ->label('Updated At')
-                ->formatStateUsing(fn ($dt) => optional($dt)->format('Y-m-d H:i:s')),
+                ->label('Updated At'),
             ExportColumn::make('deleted_at')
-                ->label('Deleted At')
-                ->formatStateUsing(fn ($dt) => optional($dt)->format('Y-m-d H:i:s')),
+                ->label('Deleted At'),
         ];
     }
 
