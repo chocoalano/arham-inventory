@@ -23,7 +23,7 @@ class ManageSuppliers extends ManageRecords
                 ->importer(SupplierImporter::class),
             ExportAction::make()
                 ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin') || auth()->user()?->hasPermissionTo('export-supplier'))
-                ->importer(SupplierExporter::class)
+                ->exporter(SupplierExporter::class)
         ];
     }
 }

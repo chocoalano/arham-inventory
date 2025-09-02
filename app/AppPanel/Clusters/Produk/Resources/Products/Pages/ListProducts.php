@@ -23,7 +23,7 @@ class ListProducts extends ListRecords
                 ->importer(ProductImporter::class),
             ExportAction::make()
                 ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin') || auth()->user()?->hasPermissionTo('export-product'))
-                ->importer(ProductExporter::class)
+                ->exporter(ProductExporter::class)
         ];
     }
 }
