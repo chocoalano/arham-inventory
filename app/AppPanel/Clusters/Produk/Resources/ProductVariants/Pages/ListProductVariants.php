@@ -23,7 +23,7 @@ class ListProductVariants extends ListRecords
                 ->importer(ProductVariantImporter::class),
             ExportAction::make()
                 ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin') || auth()->user()?->hasPermissionTo('export-product_variant'))
-                ->importer(ProductVariantExporter::class)
+                ->exporter(ProductVariantExporter::class)
         ];
     }
 }

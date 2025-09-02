@@ -17,12 +17,10 @@ class ProductVariantImporter extends Importer
 
     /**
      * Definisi kolom yang bisa di-mapping dari file CSV/XLSX.
-     * Kamu bisa memetakan header yang berbeda saat proses import di UI Filament.
      */
     public static function getColumns(): array
     {
         return [
-            // Identitas produk induk (pilih salah satu yang kamu miliki di file)
             ImportColumn::make('product_sku')
                 ->label('SKU Produk (induk)')
                 ->rules(['nullable', 'string', 'max:64'])
@@ -51,7 +49,7 @@ class ProductVariantImporter extends Importer
 
             ImportColumn::make('size')
                 ->label('Ukuran')
-                ->requiredMapping() // wajib dipetakan di UI
+                ->requiredMapping()
                 ->rules(['required', 'string', 'max:50'])
                 ->example('M'),
 
@@ -70,7 +68,7 @@ class ProductVariantImporter extends Importer
                 ->rules(['nullable', Rule::in(['active', 'inactive', 'discontinued'])])
                 ->example('active'),
 
-            // (Opsional) stok awal per gudang
+            // Stok awal per gudang (opsional)
             ImportColumn::make('warehouse_code')
                 ->label('Kode Gudang (untuk stok awal)')
                 ->rules(['nullable', 'string', 'max:32'])
@@ -89,11 +87,88 @@ class ProductVariantImporter extends Importer
     }
 
     /**
+     * Rules validasi tingkat-baris agar pesan error spesifik (bukan error sistem).
+     */
+    public function getValidationRules(): array
+    {
+        return [
+            // Minimal salah satu identitas produk wajib ada & valid
+            'product_id'  => ['nullable', 'integer', 'min:1', 'required_without:product_sku', 'bail', Rule::exists('products', 'id')],
+            'product_sku' => ['nullable', 'string', 'max:64', 'required_without:product_id', 'bail', Rule::exists('products', 'sku')],
+
+            // Varian
+            'size'        => ['required', 'string', 'max:50'],
+            'color'       => ['nullable', 'string', 'max:50'],
+
+            // Unik & format
+            'sku_variant' => ['nullable', 'string', 'max:64'],
+            'barcode'     => ['nullable', 'string', 'max:64', Rule::unique('product_variants', 'barcode')->whereNull('deleted_at')],
+
+            // Harga
+            'cost_price'  => ['nullable', 'numeric', 'min:0'],
+            'price'       => ['nullable', 'numeric', 'min:0'],
+
+            // Status
+            'status'      => ['nullable', Rule::in(['active', 'inactive', 'discontinued'])],
+
+            // Stok awal (opsional)
+            'warehouse_code'     => ['nullable', 'string', 'max:32'],
+            'init_qty'           => ['nullable', 'integer', 'min:0'],
+            'init_reserved_qty'  => ['nullable', 'integer', 'min:0'],
+        ];
+    }
+
+    /**
+     * Pesan validation yang jelas.
+     */
+    public function getValidationMessages(): array
+    {
+        return [
+            'product_id.required_without'  => 'Isi "ID Produk (induk)" atau "SKU Produk (induk)".',
+            'product_sku.required_without' => 'Isi "SKU Produk (induk)" atau "ID Produk (induk)".',
+            'product_id.exists'            => 'ID Produk (induk) tidak ditemukan di database.',
+            'product_sku.exists'           => 'SKU Produk (induk) tidak ditemukan di database.',
+
+            'size.required' => 'Ukuran wajib diisi.',
+            'size.max'      => 'Ukuran maksimal :max karakter.',
+            'color.max'     => 'Warna maksimal :max karakter.',
+
+            'barcode.unique' => 'Barcode sudah digunakan oleh varian lain.',
+            'status.in'      => 'Status tidak valid. Pilih: active, inactive, atau discontinued.',
+
+            'cost_price.numeric' => 'Harga Modal harus berupa angka.',
+            'price.numeric'      => 'Harga Jual harus berupa angka.',
+
+            'init_qty.integer'          => 'Qty Awal harus bilangan bulat.',
+            'init_reserved_qty.integer' => 'Reserved Qty Awal harus bilangan bulat.',
+        ];
+    }
+
+    /**
+     * Label atribut untuk pesan error yang ramah.
+     */
+    public function getValidationAttributes(): array
+    {
+        return [
+            'product_id'        => 'ID Produk (induk)',
+            'product_sku'       => 'SKU Produk (induk)',
+            'sku_variant'       => 'SKU Varian',
+            'barcode'           => 'Barcode',
+            'color'             => 'Warna',
+            'size'              => 'Ukuran',
+            'cost_price'        => 'Harga Modal',
+            'price'             => 'Harga Jual',
+            'status'            => 'Status',
+            'warehouse_code'    => 'Kode Gudang',
+            'init_qty'          => 'Qty Awal',
+            'init_reserved_qty' => 'Reserved Qty Awal',
+        ];
+    }
+
+    /**
      * Tentukan record yang akan dibuat/diupdate.
-     * Prioritas pencarian:
-     *  1) (product_id|product_sku) + color + size (karena ada unique composite)
-     *  2) sku_variant (fallback)
-     * Jika tidak ketemu → buat baru.
+     * Prioritas: (product + color + size) → sku_variant → new.
+     * Jika tidak bisa menentukan product, tandai gagal dengan alasan.
      */
     public function resolveRecord(): ProductVariant
     {
@@ -102,7 +177,11 @@ class ProductVariantImporter extends Importer
         $size      = $this->normalizeSize($this->data['size'] ?? null);
         $skuVar    = $this->data['sku_variant'] ?? null;
 
-        // Coba berdasarkan composite: product_id + color + size (abaikan yang soft-deleted)
+        if (! $productId) {
+            $this->fail('Produk induk tidak ditemukan. Periksa "ID Produk (induk)" atau "SKU Produk (induk)".');
+            return new ProductVariant(); // baris akan ditandai gagal
+        }
+
         if ($productId && $color && $size) {
             $existing = ProductVariant::query()
                 ->where('product_id', $productId)
@@ -116,7 +195,6 @@ class ProductVariantImporter extends Importer
             }
         }
 
-        // Fallback: berdasarkan sku_variant
         if ($skuVar) {
             $existingBySku = ProductVariant::query()
                 ->where('sku_variant', $skuVar)
@@ -127,7 +205,6 @@ class ProductVariantImporter extends Importer
             }
         }
 
-        // Tidak ada → new
         return new ProductVariant([
             'product_id' => $productId,
         ]);
@@ -139,7 +216,6 @@ class ProductVariantImporter extends Importer
     public static function getRecordFillers(): array
     {
         return [
-            // Product (resolve via product_sku atau product_id)
             ImportColumn::make('product_sku')
                 ->fillRecordUsing(function (ProductVariant $record, $state, array $row) {
                     $productId = self::resolveProductIdStatic($row);
@@ -156,13 +232,11 @@ class ProductVariantImporter extends Importer
                     }
                 }),
 
-            // Warna
             ImportColumn::make('color')
                 ->fillRecordUsing(function (ProductVariant $record, $state) {
                     $record->color = self::normalizeColorStatic($state);
                 }),
 
-            // Ukuran (validasi in-array + unique composite)
             ImportColumn::make('size')
                 ->rules([Rule::in(ProductVariant::SIZES)])
                 ->validationMessages([
@@ -172,13 +246,11 @@ class ProductVariantImporter extends Importer
                     $record->size = self::normalizeSizeStatic($state);
                 }),
 
-            // SKU Varian (auto-generate jika kosong)
             ImportColumn::make('sku_variant')
                 ->fillRecordUsing(function (ProductVariant $record, $state, array $row) {
                     $skuVar = filled($state) ? trim((string) $state) : null;
 
                     if (blank($skuVar)) {
-                        // generate berbasis SKU product + color + size
                         $productSku = self::resolveProductSkuStatic($row);
                         $skuVar = ProductVariant::generateUniqueSkuVariant(
                             productSku: $productSku,
@@ -187,7 +259,6 @@ class ProductVariantImporter extends Importer
                         );
                     }
 
-                    // pastikan unik saat create
                     if (! $record->exists) {
                         while (ProductVariant::query()->where('sku_variant', $skuVar)->exists()) {
                             $skuVar = ProductVariant::generateUniqueSkuVariant($skuVar);
@@ -197,20 +268,17 @@ class ProductVariantImporter extends Importer
                     $record->sku_variant = $skuVar;
                 }),
 
-            // Barcode (unik nullable)
             ImportColumn::make('barcode')
                 ->rules([
                     'nullable',
                     'string',
                     'max:64',
-                    // Unik saat create / ignore saat update
                     Rule::unique('product_variants', 'barcode')->whereNull('deleted_at'),
                 ])
                 ->fillRecordUsing(function (ProductVariant $record, $state) {
                     $record->barcode = filled($state) ? trim((string) $state) : null;
                 }),
 
-            // Harga
             ImportColumn::make('cost_price')
                 ->fillRecordUsing(function (ProductVariant $record, $state) {
                     if ($state !== null && $state !== '') {
@@ -225,7 +293,6 @@ class ProductVariantImporter extends Importer
                     }
                 }),
 
-            // Status
             ImportColumn::make('status')
                 ->rules([Rule::in(['active', 'inactive', 'discontinued'])])
                 ->validationMessages([
@@ -238,26 +305,21 @@ class ProductVariantImporter extends Importer
                         : ($record->status ?? 'active');
                 }),
 
-            // Stok awal per gudang (opsional)
+            // Stok awal diselesaikan di afterSaveRow()
             ImportColumn::make('warehouse_code')
-                ->fillRecordUsing(function (ProductVariant $record, $state, array $row) {
-                    // Ditangani di afterSaveRow agar product_variant_id sudah ada
-                }),
+                ->fillRecordUsing(fn () => null),
 
             ImportColumn::make('init_qty')
-                ->fillRecordUsing(function (ProductVariant $record, $state, array $row) {
-                    // Ditangani di afterSaveRow
-                }),
+                ->fillRecordUsing(fn () => null),
 
             ImportColumn::make('init_reserved_qty')
-                ->fillRecordUsing(function (ProductVariant $record, $state, array $row) {
-                    // Ditangani di afterSaveRow
-                }),
+                ->fillRecordUsing(fn () => null),
         ];
     }
 
     /**
-     * Setelah tiap baris tersimpan, kita boleh isi stok awal per gudang (opsional).
+     * Setelah tiap baris tersimpan: isi stok awal (opsional) dgn validasi jelas.
+     * Gagal → tandai baris gagal dengan $this->fail('alasan spesifik'), bukan error sistem.
      */
     public function afterSaveRow(): void
     {
@@ -268,16 +330,27 @@ class ProductVariantImporter extends Importer
         $qty    = $this->toInt($this->data['init_qty'] ?? null);
         $rq     = $this->toInt($this->data['init_reserved_qty'] ?? null);
 
-        if (! $whCode || ($qty === null && $rq === null)) {
-            return; // tidak ada pengisian stok
-        }
-
-        $warehouse = Warehouse::query()->where('code', trim((string) $whCode))->first();
-        if (! $warehouse) {
+        // Tidak ada input stok → selesai
+        if (! $whCode && $qty === null && $rq === null) {
             return;
         }
 
-        // upsert stok
+        // Qty/Reserved ada tapi kode gudang kosong → gagal dengan pesan spesifik
+        if (($qty !== null || $rq !== null) && blank($whCode)) {
+            $this->fail('Gagal mengisi stok awal: "Kode Gudang" kosong sementara Qty/Reserved diisi.');
+            return;
+        }
+
+        $warehouse = Warehouse::query()
+            ->where('code', trim((string) $whCode))
+            ->first();
+
+        if (! $warehouse) {
+            $this->fail("Gagal mengisi stok awal: Kode Gudang '{$whCode}' tidak ditemukan.");
+            return;
+        }
+
+        // Upsert stok (aman)
         $variant->stocks()->updateOrCreate(
             ['warehouse_id' => $warehouse->id],
             [
@@ -289,12 +362,13 @@ class ProductVariantImporter extends Importer
 
     public static function getCompletedNotificationBody(Import $import): string
     {
-        $body = 'Your product variant import has completed and ' . Number::format($import->successful_rows)
-            . ' ' . str('row')->plural($import->successful_rows) . ' imported.';
+        $body = 'Import varian produk selesai. '
+            . Number::format($import->successful_rows) . ' '
+            . str('baris')->plural($import->successful_rows) . ' berhasil diimpor.';
 
         if ($failedRowsCount = $import->getFailedRowsCount()) {
             $body .= ' ' . Number::format($failedRowsCount) . ' '
-                . str('row')->plural($failedRowsCount) . ' failed to import.';
+                . str('baris')->plural($failedRowsCount) . ' gagal diimpor.';
         }
 
         return $body;
@@ -311,12 +385,10 @@ class ProductVariantImporter extends Importer
 
     protected static function resolveProductIdStatic(array $row): ?int
     {
-        // 1) by product_id
         if (! empty($row['product_id'])) {
             return (int) $row['product_id'];
         }
 
-        // 2) by product_sku
         if (! empty($row['product_sku'])) {
             $sku = strtoupper(trim((string) $row['product_sku']));
             return Product::query()->where('sku', $sku)->value('id');
@@ -331,7 +403,6 @@ class ProductVariantImporter extends Importer
             return strtoupper(trim((string) $row['product_sku']));
         }
 
-        // Jika tidak ada product_sku tapi ada product_id, ambil sku dari DB
         if (! empty($row['product_id'])) {
             $sku = Product::query()->where('id', (int) $row['product_id'])->value('sku');
             return $sku ? (string) $sku : null;
@@ -348,7 +419,7 @@ class ProductVariantImporter extends Importer
     protected static function normalizeColorStatic(?string $val): ?string
     {
         $val = trim((string) $val);
-        return $val === '' ? null : $val; // biarkan case sesuai input, atau paksa lower: mb_strtolower($val)
+        return $val === '' ? null : $val;
     }
 
     protected function normalizeSize(?string $val): ?string

@@ -36,9 +36,10 @@ class ProductVariantsTable
     {
         return $table
             // Hemat query: eager-load relasi & total stok
-            ->modifyQueryUsing(fn ($query) => $query
-                ->with(['product:id,sku', 'stocks.warehouse'])
-                ->withSum('stocks as total_stock', 'qty')
+            ->modifyQueryUsing(
+                fn($query) => $query
+                    ->with(['product:id,sku', 'stocks.warehouse'])
+                    ->withSum('stocks as total_stock', 'qty')
             )
 
             ->columns([
@@ -96,22 +97,9 @@ class ProductVariantsTable
                     ->searchable()
                     ->preload(),
 
-                // Warna: opsi distinct dari DB (aman dipakai di SelectFilter)
-                SelectFilter::make('color')
-                    ->label('Warna')
-                    ->options(fn () => ProductVariant::query()
-                        ->whereNotNull('color')
-                        ->distinct()
-                        ->orderBy('color')
-                        ->pluck('color', 'color')
-                        ->toArray()
-                    )
-                    ->searchable()
-                    ->preload(),
-
                 SelectFilter::make('size')
                     ->label('Ukuran')
-                    ->options(fn () => array_combine(ProductVariant::SIZES, ProductVariant::SIZES))
+                    ->options(fn() => array_combine(ProductVariant::SIZES, ProductVariant::SIZES))
                     ->searchable()
                     ->preload(),
 
@@ -121,8 +109,8 @@ class ProductVariantsTable
                     ->trueLabel('Ya')
                     ->falseLabel('Tidak')
                     ->queries(
-                        true: fn ($q) => $q->whereHas('stocks', fn ($s) => $s->where('qty', '>', 0)),
-                        false: fn ($q) => $q->whereDoesntHave('stocks', fn ($s) => $s->where('qty', '>', 0)),
+                        true: fn($q) => $q->whereHas('stocks', fn($s) => $s->where('qty', '>', 0)),
+                        false: fn($q) => $q->whereDoesntHave('stocks', fn($s) => $s->where('qty', '>', 0)),
                     ),
 
                 TernaryFilter::make('has_transactions')
@@ -130,8 +118,8 @@ class ProductVariantsTable
                     ->trueLabel('Ya')
                     ->falseLabel('Tidak')
                     ->queries(
-                        true: fn ($q) => $q->whereHas('transactions'),
-                        false: fn ($q) => $q->whereDoesntHave('transactions'),
+                        true: fn($q) => $q->whereHas('transactions'),
+                        false: fn($q) => $q->whereDoesntHave('transactions'),
                     ),
 
                 TrashedFilter::make(),
@@ -143,13 +131,13 @@ class ProductVariantsTable
                         ->label('Aktivitas')
                         ->icon('heroicon-m-clock')
                         ->color('primary')
-                        ->visible(fn (): bool => (bool) auth()->user()?->hasRole('Superadmin'))
-                        ->url(fn ($record) => ProductVariantResource::getUrl('activities', ['record' => $record])),
+                        ->visible(fn(): bool => (bool) auth()->user()?->hasRole('Superadmin'))
+                        ->url(fn($record) => ProductVariantResource::getUrl('activities', ['record' => $record])),
 
                     EditAction::make()
                         ->label('Edit')
-                        ->disabled(fn (ProductVariant $r) => self::blockedByTransactions($r))
-                        ->tooltip(fn (ProductVariant $r) => self::blockedByTransactions($r)
+                        ->disabled(fn(ProductVariant $r) => self::blockedByTransactions($r))
+                        ->tooltip(fn(ProductVariant $r) => self::blockedByTransactions($r)
                             ? 'Varian ini sudah memiliki transaksi dan tidak bisa diedit.'
                             : null)
                         ->action(function (ProductVariant $record, array $data, EditAction $action) {
@@ -166,8 +154,8 @@ class ProductVariantsTable
                     DeleteAction::make()
                         ->label('Hapus')
                         ->requiresConfirmation()
-                        ->disabled(fn (ProductVariant $r) => self::blockedByTransactions($r))
-                        ->tooltip(fn (ProductVariant $r) => self::blockedByTransactions($r)
+                        ->disabled(fn(ProductVariant $r) => self::blockedByTransactions($r))
+                        ->tooltip(fn(ProductVariant $r) => self::blockedByTransactions($r)
                             ? 'Varian ini sudah memiliki transaksi dan tidak bisa dihapus.'
                             : null)
                         ->action(function (ProductVariant $record, DeleteAction $action) {
@@ -197,7 +185,7 @@ class ProductVariantsTable
                         })
                         ->form([
                             Hidden::make('product_id')
-                                ->default(fn ($record) => $record?->product_id)
+                                ->default(fn($record) => $record?->product_id)
                                 ->dehydrated(),
 
                             Section::make()
@@ -206,7 +194,7 @@ class ProductVariantsTable
                                         ->label('SKU Varian')
                                         ->required()
                                         ->maxLength(64)
-                                        ->default(fn (array $data) => ProductVariant::generateUniqueSkuVariant(
+                                        ->default(fn(array $data) => ProductVariant::generateUniqueSkuVariant(
                                             productSku: $data['product']['sku'] ?? null,
                                             color: $data['color'] ?? null,
                                             size: $data['size'] ?? null,
@@ -220,13 +208,13 @@ class ProductVariantsTable
 
                                     Select::make('size')
                                         ->label('Ukuran')
-                                        ->options(fn () => array_combine(ProductVariant::SIZES, ProductVariant::SIZES))
+                                        ->options(fn() => array_combine(ProductVariant::SIZES, ProductVariant::SIZES))
                                         ->required()
                                         ->searchable()
-                                        ->rules(fn (Get $get) => [
+                                        ->rules(fn(Get $get) => [
                                             Rule::in(ProductVariant::SIZES),
                                             Rule::unique('product_variants', 'size')->where(
-                                                fn ($q) => $q
+                                                fn($q) => $q
                                                     ->where('product_id', $get('product_id'))
                                                     ->where('color', $get('color'))
                                                     ->whereNull('deleted_at')
@@ -250,7 +238,7 @@ class ProductVariantsTable
                         ->requiresConfirmation()
                         ->action(function (Collection $records) {
                             [$blocked, $deletable] = $records->partition(
-                                fn (ProductVariant $r) => self::blockedByTransactions($r)
+                                fn(ProductVariant $r) => self::blockedByTransactions($r)
                             );
 
                             if ($deletable->isNotEmpty()) {
@@ -260,7 +248,7 @@ class ProductVariantsTable
 
                             if ($blocked->isNotEmpty()) {
                                 $list = $blocked
-                                    ->map(fn (ProductVariant $r) => $r->sku_variant ?? $r->id)
+                                    ->map(fn(ProductVariant $r) => $r->sku_variant ?? $r->id)
                                     ->join(', ');
 
                                 self::notify(
@@ -288,9 +276,9 @@ class ProductVariantsTable
     protected static function notify(string $title, ?string $body = null, bool $danger = false): void
     {
         Notification::make()
-            ->title($title)
-            ->when($body, fn ($n) => $n->body($body))
-            ->{ $danger ? 'danger' : 'success' }()
-            ->send();
+                    ->title($title)
+                    ->when($body, fn($n) => $n->body($body))
+            ->{$danger ? 'danger' : 'success'}()
+                ->send();
     }
 }
