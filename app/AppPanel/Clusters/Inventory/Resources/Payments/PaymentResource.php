@@ -158,7 +158,8 @@ class PaymentResource extends Resource
                                 $data['max_date'],
                                 fn(Builder $query, $date): Builder => $query->whereDate('payment_date', '<=', $date),
                             );
-                    }),
+                    })
+                    ->columnSpan(3),
                 TrashedFilter::make(),
             ], layout: FiltersLayout::AboveContent)
             ->recordActions([

@@ -3,6 +3,7 @@
 namespace App\Models\Inventory;
 
 use App\Models\User;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -14,7 +15,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
 
 class Transaction extends Model
 {
-    use SoftDeletes, LogsActivity, SoftDeletes;
+    use HasFactory, SoftDeletes, LogsActivity, SoftDeletes;
 
     public const STATUS_DRAFT = 'draft';
     public const STATUS_POSTED = 'posted';

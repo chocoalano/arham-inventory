@@ -2,135 +2,77 @@
 
 namespace Database\Seeders;
 
-use App\Models\Inventory\Invoice;
-use App\Models\Inventory\Payment;
 use App\Models\Inventory\Product;
-use App\Models\Inventory\ProductImage;
 use App\Models\Inventory\ProductVariant;
-use App\Models\Inventory\Stocks;
+use App\Models\Inventory\Supplier;
 use App\Models\Inventory\Transaction;
-use App\Models\Inventory\TransactionDetail;
 use App\Models\Inventory\Warehouse;
+use App\Models\Inventory\WarehouseVariantStock;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Database\Eloquent\Model;
 
 class InventorySeeder extends Seeder
 {
-    /**
-     * Run the database seeds.
-     */
     public function run(): void
     {
-        // --- 1) Warehouses ---
-        $warehouses = Warehouse::factory()->count(4)->create();
+        // Hemat RAM saat seeding
+        DB::disableQueryLog();
+        Model::unsetEventDispatcher();
 
-        // --- 2) Products + Variants + Images ---
-        // Buat 15 produk; tiap produk 2-5 varian dan 1-3 gambar
-        Product::factory()
-            ->count(15)
-            ->create()
-            ->each(function (Product $product) {
-                // Images
-                ProductImage::factory()
-                    ->count(fake()->numberBetween(1, 3))
-                    ->create([
-                        'product_id' => $product->id,
-                    ]);
+        // ===== Knobs (atur dari .env) =====
+        $WAREHOUSE_COUNT      = (int) env('SEED_WAREHOUSES', 3);
+        $SUPPLIER_COUNT       = (int) env('SEED_SUPPLIERS', 5);
+        $PRODUCT_COUNT        = (int) env('SEED_PRODUCTS', 10);
+        $VARIANT_PER_PRODUCT  = (int) env('SEED_VARIANTS_PER_PRODUCT', 3);
+        $IMAGES_PER_PRODUCT   = (int) env('SEED_IMAGES_PER_PRODUCT', 2);
+        $STOCK_PER_WAREHOUSE  = (int) env('SEED_STOCK_PER_WAREHOUSE', 60); // stok awal per gudang (maks)
+        $TX_SALES             = (int) env('SEED_TX_SALES', 10);
+        $TX_TRANSFER          = (int) env('SEED_TX_TRANSFER', 6);
+        $TX_RETURN            = (int) env('SEED_TX_RETURN', 4);
 
-                // Variants
-                ProductVariant::factory()
-                    ->count(fake()->numberBetween(2, 5))
-                    ->create([
-                        'product_id' => $product->id,
-                    ]);
-            });
+        // ===== Master =====
+        Warehouse::factory($WAREHOUSE_COUNT)->create();
+        Supplier::factory($SUPPLIER_COUNT)->create();
 
-        // Kumpulkan semua varian yang sudah ada
-        $variants = ProductVariant::all();
+        // Produk + turunannya (terkendali)
+        Product::factory($PRODUCT_COUNT)
+            ->withVariants($VARIANT_PER_PRODUCT)
+            ->withImages($IMAGES_PER_PRODUCT)
+            ->create();
 
-        // --- 3) Stocks: tiap varian punya stok di SEMUA gudang ---
-        foreach ($variants as $variant) {
-            foreach ($warehouses as $wh) {
-                Stocks::factory()->create([
-                    'product_variant_id' => $variant->id,
-                    'warehouse_id' => $wh->id,
-                    'quantity' => fake()->numberBetween(5, 120),
-                ]);
+        // ===== Stok awal: batasi per gudang (hindari kartesius) =====
+        $warehouseIds = Warehouse::pluck('id');
+        $variantIds   = ProductVariant::pluck('id');
+
+        foreach ($warehouseIds as $whId) {
+            $take = min($STOCK_PER_WAREHOUSE, $variantIds->count());
+            if ($take === 0) continue;
+
+            // ambil subset acak varian untuk gudang ini
+            $selected = $variantIds->random($take);
+
+            // siapkan bulk insert agar hemat
+            $rows = [];
+            foreach ($selected as $varId) {
+                $rows[] = [
+                    'warehouse_id'       => $whId,
+                    'product_variant_id' => $varId,
+                    'qty'                => random_int(20, 200),
+                    'reserved_qty'       => random_int(0, 20),
+                    'created_at'         => now(),
+                    'updated_at'         => now(),
+                ];
             }
+            // gunakan insert() + ignore duplikat (kalau pakai MySQL 8, bisa pakai upsert)
+            DB::table('warehouse_variant_stocks')->insert($rows);
+            unset($rows);
         }
 
-        // --- 4) Transactions + Details + Invoices + Payments ---
-        // Buat 30 transaksi acak, tiap transaksi 1–5 item
-        Transaction::factory()
-            ->count(30)
-            ->create()
-            ->each(function (Transaction $trx) use ($variants, $warehouses) {
-                $detailsCount = fake()->numberBetween(1, 5);
-                $total = 0;
-
-                for ($i = 0; $i < $detailsCount; $i++) {
-                    $variant = $variants->random();
-                    // Ambil stok acak untuk varian tsb di salah satu gudang
-                    $wh = $warehouses->random();
-                    $price = fake()->randomFloat(2, 50000, 500000);
-                    // batasi qty agar tidak berlebihan (opsional)
-                    $qty = fake()->numberBetween(1, 10);
-
-                    TransactionDetail::factory()->create([
-                        'transaction_id' => $trx->id,
-                        'product_variant_id' => $variant->id,
-                        'warehouse_id' => $wh->id,
-                        'quantity' => $qty,
-                        'price' => $price,
-                    ]);
-
-                    $total += $qty * $price;
-                }
-
-                // Buat Invoice untuk transaksi ini
-                $invoice = Invoice::factory()->create([
-                    'transaction_id' => $trx->id,
-                    'total_amount' => $total,
-                    // paid_amount & is_paid akan disesuaikan setelah bikin payments
-                    'paid_amount' => 0,
-                    'is_paid' => false,
-                ]);
-
-                // Buat 0–3 pembayaran, jumlahnya tidak melebihi total
-                $paymentsCount = fake()->numberBetween(0, 3);
-                $remaining = $total;
-
-                for ($j = 0; $j < $paymentsCount; $j++) {
-                    if ($remaining <= 0)
-                        break;
-
-                    // Distribusikan pembayaran secara acak
-                    $amount = round(
-                        $j === $paymentsCount - 1
-                        ? $remaining
-                        : min($remaining, fake()->randomFloat(2, 20000, max(20000, $total / 2))),
-                        2
-                    );
-
-                    if ($amount <= 0)
-                        continue;
-
-                    Payment::factory()->create([
-                        'invoice_id' => $invoice->id,
-                        'amount' => $amount,
-                        'method' => fake()->randomElement(['transfer', 'cash', 'card']),
-                        'payment_date' => fake()->date(),
-                        'notes' => fake()->optional()->sentence(),
-                    ]);
-
-                    $remaining -= $amount;
-                }
-
-                // Update paid_amount & is_paid sesuai payments yang dibuat
-                $paid = $invoice->payments()->sum('amount');
-                $invoice->update([
-                    'paid_amount' => $paid,
-                    'is_paid' => $paid >= $total,
-                ]);
-            });
+        // ===== Transaksi (pakai katalog existing — tidak melahirkan produk/varian baru) =====
+        // Dengan withAutoDetails() yang diperbaiki (lihat file factory di bawah).
+        Transaction::factory($TX_SALES)->sale()->withAutoDetails()->create();
+        Transaction::factory($TX_TRANSFER)->transfer()->withAutoDetails()->create();
+        Transaction::factory($TX_RETURN)->returnIn()->withAutoDetails()->create();
     }
 }

@@ -247,7 +247,7 @@ class InvoiceResource extends Resource
                             $indicators[] = 'Sampai: ' . \Illuminate\Support\Carbon::parse($data['until'])->isoFormat('D MMM Y');
                         }
                         return $indicators;
-                    }),
+                    })->columnSpan(2),
 
                 // 3) Range Nominal Total (IDR)
                 Filter::make('total_amount_range')

@@ -2,6 +2,7 @@
 
 namespace App\Models\Inventory;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Spatie\Activitylog\LogOptions;
@@ -9,7 +10,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
 
 class TransactionDetail extends Model
 {
-    use LogsActivity;
+    use HasFactory, LogsActivity;
     protected $fillable = [
         'transaction_id','product_id','product_variant_id',
         'warehouse_id','qty','price','discount_amount','line_total',

@@ -51,6 +51,13 @@ class RolePermissionSeeder extends Seeder
         'transaction',
         'warehouse',
         'supplier',
+
+        'account',
+        'account_mapping',
+        'cost_center',
+        'fiscal_year',
+        'journal',
+        'period',
     ];
 
     public function run(): void

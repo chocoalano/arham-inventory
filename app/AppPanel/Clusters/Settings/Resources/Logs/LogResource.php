@@ -7,22 +7,19 @@ use App\AppPanel\Clusters\Settings\SettingsCluster;
 use App\Models\Log;
 use BackedEnum;
 use Filament\Actions\BulkActionGroup;
-use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
-use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
-use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\KeyValueEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
-use Filament\Tables\Columns\Layout\Stack;
 use Filament\Tables\Columns\TagsColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Str;
 
 class LogResource extends Resource
 {
@@ -134,10 +131,6 @@ class LogResource extends Resource
                     ->label('Pelaku')
                     ->placeholder('System')
                     ->searchable(),
-
-                TextColumn::make('user.name')
-                    ->label('Pelaku')
-                    ->searchable(),
                 // Ringkasan perubahan dari JSON properties (old vs attributes)
                 TagsColumn::make('perubahan')
                     ->label('Perubahan')
@@ -145,15 +138,18 @@ class LogResource extends Resource
                         $props = $record->properties;
 
                         // Normalisasi properties → array
-                        if ($props instanceof Arrayable)
+                        if ($props instanceof Arrayable) {
                             $props = $props->toArray();
+                        }
                         if (is_string($props)) {
                             $decoded = json_decode($props, true);
-                            if (json_last_error() === JSON_ERROR_NONE)
+                            if (json_last_error() === JSON_ERROR_NONE) {
                                 $props = $decoded;
+                            }
                         }
-                        if (!is_array($props))
+                        if (!is_array($props)) {
                             return [];
+                        }
 
                         $hidden = ['password', 'remember_token']; // field sensitif
                         $moneyFields = ['price', 'cost_price', 'total', 'amount', 'subtotal'];
@@ -163,8 +159,9 @@ class LogResource extends Resource
                         $new = Arr::get($props, 'attributes', []);
 
                         $fmt = function (string $k, $v) use ($moneyFields, $intFields) {
-                            if (is_null($v))
+                            if (is_null($v)) {
                                 return 'null';
+                            }
                             if (in_array($k, $moneyFields, true) && is_numeric($v)) {
                                 return 'Rp ' . number_format((float) $v, 0, ',', '.');
                             }
@@ -179,10 +176,10 @@ class LogResource extends Resource
                             $tags = collect($new)
                                 ->reject(fn($v, $k) => in_array($k, $hidden, true))
                                 ->map(fn($v, $k) => "{$k}: " . $fmt($k, $v))
+                                ->map(fn($s) => Str::limit($s, 50)) // 🚀 Batasi panjang string
                                 ->values()
                                 ->all();
 
-                            // Jika semua field termasuk hidden → tampilkan indikator
                             if (empty($tags) && !empty($new)) {
                                 $sens = implode(', ', array_keys($new));
                                 return ["Field sensitif dibuat: {$sens}"];
@@ -198,16 +195,15 @@ class LogResource extends Resource
                         foreach ($keys as $k) {
                             $before = $old[$k] ?? null;
                             $after = $new[$k] ?? null;
-                            if ($before === $after)
+                            if ($before === $after) {
                                 continue;
+                            }
 
-                            // Catat perubahan field tersembunyi
                             if (in_array($k, $hidden, true)) {
                                 $hiddenChanged[] = $k;
                                 continue;
                             }
 
-                            // Delta angka (non-money)
                             $delta = null;
                             if (is_numeric($before) && is_numeric($after) && !in_array($k, $moneyFields, true)) {
                                 $diff = (float) $after - (float) $before;
@@ -218,17 +214,17 @@ class LogResource extends Resource
                             $visibleDiffs[] = "{$k}: '" . $fmt($k, $before) . "' → '" . $fmt($k, $after) . "'" . ($delta ?? '');
                         }
 
-                        // Jika tidak ada perubahan yang terlihat karena semua yang berubah adalah field sensitif
                         if (empty($visibleDiffs) && !empty($hiddenChanged)) {
                             $list = implode(', ', $hiddenChanged);
-                            return ["Field sensitif diubah: {$list}"]; // aman, tanpa nilai
-                            // Jika ingin tampilkan masked:
-                            // return collect($hiddenChanged)->map(fn($k) => "{$k}: '********' → '********'")->all();
+                            return ["Field sensitif diubah: {$list}"];
                         }
 
-                        return $visibleDiffs;
+                        // 🚀 Batasi panjang tiap string agar tidak kepanjangan
+                        return collect($visibleDiffs)
+                            ->map(fn($s) => Str::limit($s, 80))
+                            ->all();
                     })
-                    ->limit(5)
+                    ->limit(4)
                     ->toggleable()
                     ->separator(','),
                 TextColumn::make('created_at')->label('Waktu kejadian')->dateTime(),

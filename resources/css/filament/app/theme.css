@@ -3,6 +3,7 @@
 /* Tailwind v4 content sources */
 @source '../../../../app/AppPanel/**/*';
 @source '../../../../resources/views/filament/**/*';
+@source '../../../../resources/views/vendor/filament-panels/**/*';
 
 /* ===== Brand Colors ===== */
 /* Gold: #D6BB83 | Soft Gold: #F3E7D3 | Dark body: #080808 | Dark base: #0B0B0B */

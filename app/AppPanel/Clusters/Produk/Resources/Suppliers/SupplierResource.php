@@ -103,7 +103,7 @@ class SupplierResource extends Resource
                                 $data['max_date'],
                                 fn(Builder $query, $date): Builder => $query->whereDate('created_at', '<=', $date),
                             );
-                    }),
+                    })->columnSpan(3),
                 TrashedFilter::make(),
             ], layout: FiltersLayout::AboveContent)
             ->recordActions([

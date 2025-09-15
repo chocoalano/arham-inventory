@@ -32,11 +32,32 @@
       0 => 'BladeUI\\Icons\\BladeIconsServiceProvider',
     ),
   ),
+  'codeat3/blade-codicons' => 
+  array (
+    'providers' => 
+    array (
+      0 => 'Codeat3\\BladeCodicons\\BladeCodiconsServiceProvider',
+    ),
+  ),
   'codeat3/blade-eos-icons' => 
   array (
     'providers' => 
     array (
       0 => 'Codeat3\\BladeEosIcons\\BladeEosIconsServiceProvider',
+    ),
+  ),
+  'codeat3/blade-grommet-icons' => 
+  array (
+    'providers' => 
+    array (
+      0 => 'Codeat3\\BladeGrommetIcons\\BladeGrommetIconsServiceProvider',
+    ),
+  ),
+  'codeat3/blade-memory-icons' => 
+  array (
+    'providers' => 
+    array (
+      0 => 'Codeat3\\BladeMemoryIcons\\BladeMemoryIconsServiceProvider',
     ),
   ),
   'filament/actions' => 
@@ -185,6 +206,17 @@
     'providers' => 
     array (
       0 => 'Spatie\\Activitylog\\ActivitylogServiceProvider',
+    ),
+  ),
+  'zvizvi/relation-manager-repeater' => 
+  array (
+    'aliases' => 
+    array (
+      'RelationManagerRepeater' => 'Zvizvi\\RelationManagerRepeater\\Facades\\RelationManagerRepeater',
+    ),
+    'providers' => 
+    array (
+      0 => 'Zvizvi\\RelationManagerRepeater\\RelationManagerRepeaterServiceProvider',
     ),
   ),
 );

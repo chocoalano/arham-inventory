@@ -21,15 +21,10 @@ use Filament\Actions\RestoreAction;
 use Filament\Actions\RestoreBulkAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
-use Filament\Forms\Components\KeyValue;
 use Filament\Forms\Components\Placeholder;
-use Filament\Forms\Components\Textarea;
-use Filament\Forms\Components\TextInput;
-use Filament\Forms\Components\Toggle;
 use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
-use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -188,7 +183,8 @@ class WarehouseResource extends Resource
                             ->when($from, fn(Builder $qq) => $qq->where('created_at', '>=', $from))
                             // batas atas eksklusif agar mencakup full hari
                             ->when($until, fn(Builder $qq) => $qq->where('created_at', '<', \Illuminate\Support\Carbon::parse($until)->addDay()->startOfDay()));
-                    }),
+                    })
+                    ->columnSpan(3),
 
                 /**
                  * Ada stok? (cek relasi stocks.qty > 0)

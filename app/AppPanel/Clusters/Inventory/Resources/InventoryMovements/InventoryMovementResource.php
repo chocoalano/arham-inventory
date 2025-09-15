@@ -7,9 +7,7 @@ use App\AppPanel\Clusters\Inventory\Resources\InventoryMovements\Pages\ManageInv
 use App\AppPanel\Clusters\Inventory\Resources\InventoryMovements\Pages\ManageInventoryMovements;
 use App\AppPanel\Clusters\Inventory\Resources\InventoryMovements\Widgets\InventoryStats;
 use App\Models\Inventory\InventoryMovement;
-use App\Models\Inventory\Invoice;
 use App\Models\Inventory\ProductVariant;
-use App\Models\Inventory\Transaction;
 use App\Models\Inventory\Warehouse;
 use App\Models\Inventory\WarehouseVariantStock;
 use BackedEnum;
@@ -24,7 +22,6 @@ use Filament\Actions\ForceDeleteBulkAction;
 use Filament\Actions\ReplicateAction;
 use Filament\Actions\RestoreAction;
 use Filament\Actions\RestoreBulkAction;
-use Filament\Forms\Components\Builder;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Placeholder;
@@ -285,7 +282,7 @@ class InventoryMovementResource extends Resource
                         }
 
                         return $indicators;
-                    }),
+                    })->columnSpan(4),
                 TrashedFilter::make(),
             ], layout: FiltersLayout::AboveContent)
             ->recordActions([

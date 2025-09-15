@@ -33,10 +33,15 @@ class AppPanelProvider extends PanelProvider
             ->path('app')
             ->maxContentWidth(Width::Full)
             ->subNavigationPosition(SubNavigationPosition::Top)
+            ->viteTheme('resources/css/app.css')
             ->brandName('Arham Stock System')
             ->brandLogo(asset('images/logo.png'))
             ->brandLogoHeight('3rem')
+            ->unsavedChangesAlerts()
             ->databaseNotifications()
+            ->databaseTransactions()
+            // ->sidebarFullyCollapsibleOnDesktop()
+            ->sidebarWidth('15rem')
             ->login()
             ->colors([
                 'danger' => Color::Rose,       // untuk error / delete
