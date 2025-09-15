@@ -179,7 +179,7 @@ return new class extends Migration {
 
         // -- Profit & Loss (ringkas)
         DB::statement("
-            CREATE OR REPLACE VIEW view_profit_and_losses AS
+            CREATE OR REPLACE VIEW v_profit_and_loss AS
             SELECT
             CONCAT('pl-', COALESCE(p.id, 0))                               AS id,
             p.id                                                           AS period_id,
@@ -208,28 +208,7 @@ return new class extends Migration {
         // -- Balance Sheet (ringkas)
         DB::statement("
             CREATE OR REPLACE VIEW v_balance_sheet AS
-            SELECT
-                CONCAT('bs-', COALESCE(p.id, 0)) AS id,  -- id string untuk Neraca
-                p.id AS period_id,
-                p.period_no,
-                p.starts_on,
-                p.ends_on,
-                fy.year AS fiscal_year,
-                SUM(CASE WHEN a.type='asset'     THEN (jl.debit - jl.credit) ELSE 0 END) AS total_assets,
-                SUM(CASE WHEN a.type='liability' THEN (jl.credit - jl.debit) ELSE 0 END) AS total_liabilities,
-                SUM(CASE WHEN a.type='equity'    THEN (jl.credit - jl.debit) ELSE 0 END) AS total_equity,
-                SUM(CASE
-                        WHEN a.type='asset'                 THEN (jl.debit - jl.credit)
-                        WHEN a.type IN ('liability','equity') THEN (jl.credit - jl.debit)
-                        ELSE 0
-                    END) AS accounting_equation
-            FROM journal_lines jl
-            JOIN journals j ON j.id = jl.journal_id AND j.status = 'posted'
-            JOIN accounts a ON a.id = jl.account_id
-            LEFT JOIN periods p ON p.id = j.period_id
-            LEFT JOIN fiscal_years fy ON fy.id = p.fiscal_year_id
-            WHERE j.deleted_at IS NULL
-            GROUP BY id, p.id, p.period_no, fy.year;
+            select concat('bs-',coalesce(`p`.`id`,0)) AS `id`,`p`.`id` AS `period_id`,`p`.`period_no` AS `period_no`,`p`.`starts_on` AS `starts_on`,`p`.`ends_on` AS `ends_on`,`fy`.`year` AS `fiscal_year`,sum((case when (`a`.`type` = 'asset') then (`jl`.`debit` - `jl`.`credit`) else 0 end)) AS `total_assets`,sum((case when (`a`.`type` = 'liability') then (`jl`.`credit` - `jl`.`debit`) else 0 end)) AS `total_liabilities`,sum((case when (`a`.`type` = 'equity') then (`jl`.`credit` - `jl`.`debit`) else 0 end)) AS `total_equity`,sum((case when (`a`.`type` = 'asset') then (`jl`.`debit` - `jl`.`credit`) when (`a`.`type` in ('liability','equity')) then (`jl`.`credit` - `jl`.`debit`) else 0 end)) AS `accounting_equation` from ((((`my-apps-filament`.`journal_lines` `jl` join `my-apps-filament`.`journals` `j` on(((`j`.`id` = `jl`.`journal_id`) and (`j`.`status` = 'posted')))) join `my-apps-filament`.`accounts` `a` on((`a`.`id` = `jl`.`account_id`))) left join `my-apps-filament`.`periods` `p` on((`p`.`id` = `j`.`period_id`))) left join `my-apps-filament`.`fiscal_years` `fy` on((`fy`.`id` = `p`.`fiscal_year_id`))) where (`j`.`deleted_at` is null) group by `id`,`p`.`id`,`p`.`period_no`,`fy`.`year`
         ");
 
 
