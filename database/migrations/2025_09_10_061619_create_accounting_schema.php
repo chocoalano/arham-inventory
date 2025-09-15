@@ -200,8 +200,6 @@ return new class extends Migration {
             LEFT JOIN periods p        ON p.id = j.period_id
             LEFT JOIN fiscal_years fy  ON fy.id = p.fiscal_year_id
             WHERE j.status = 'posted'
-            AND j.deleted_at IS NULL
-            AND (jl.deleted_at IS NULL OR jl.deleted_at = '0000-00-00') -- sesuaikan jika tidak pakai soft delete di jl
             GROUP BY
             p.id, p.period_no, p.starts_on, p.ends_on, fy.year;
         ");
