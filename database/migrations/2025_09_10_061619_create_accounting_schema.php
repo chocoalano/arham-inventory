@@ -179,29 +179,33 @@ return new class extends Migration {
 
         // -- Profit & Loss (ringkas)
         DB::statement("
-            CREATE OR REPLACE VIEW v_profit_and_loss AS
+            CREATE OR REPLACE VIEW view_profit_and_losses AS
             SELECT
-                CONCAT('pl-', COALESCE(p.id, 0)) AS id,  -- id string untuk P&L
-                p.id AS period_id,
-                p.period_no,
-                p.starts_on,
-                p.ends_on,
-                fy.year AS fiscal_year,
-                SUM(CASE WHEN a.type='revenue' THEN (jl.credit - jl.debit) ELSE 0 END) AS total_revenue,
-                SUM(CASE WHEN a.type='expense' THEN (jl.debit - jl.credit) ELSE 0 END) AS total_expense,
-                SUM(CASE
-                        WHEN a.type='revenue' THEN (jl.credit - jl.debit)
-                        WHEN a.type='expense' THEN (jl.debit - jl.credit)
-                        ELSE 0
-                    END) AS net_profit
-            FROM journal_lines jl
-            JOIN journals j ON j.id = jl.journal_id AND j.status = 'posted'
-            JOIN accounts a ON a.id = jl.account_id
-            LEFT JOIN periods p ON p.id = j.period_id
-            LEFT JOIN fiscal_years fy ON fy.id = p.fiscal_year_id
-            WHERE j.deleted_at IS NULL
-            GROUP BY id, p.id, p.period_no, fy.year
+            CONCAT('pl-', COALESCE(p.id, 0))                               AS id,
+            p.id                                                           AS period_id,
+            p.period_no                                                    AS period_no,
+            p.starts_on                                                    AS starts_on,
+            p.ends_on                                                      AS ends_on,
+            fy.year                                                        AS fiscal_year,
+            ROUND(SUM(CASE WHEN a.type = 'revenue' THEN (jl.credit - jl.debit) ELSE 0 END), 2) AS total_revenue,
+            ROUND(SUM(CASE WHEN a.type = 'expense' THEN (jl.debit - jl.credit) ELSE 0 END), 2) AS total_expense,
+            ROUND(SUM(CASE
+                WHEN a.type = 'revenue' THEN (jl.credit - jl.debit)
+                WHEN a.type = 'expense' THEN (jl.debit - jl.credit)
+                ELSE 0
+            END), 2) AS net_profit
+            FROM journals j
+            JOIN journal_lines jl ON jl.journal_id = j.id
+            JOIN accounts a       ON a.id = jl.account_id
+            LEFT JOIN periods p        ON p.id = j.period_id
+            LEFT JOIN fiscal_years fy  ON fy.id = p.fiscal_year_id
+            WHERE j.status = 'posted'
+            AND j.deleted_at IS NULL
+            AND (jl.deleted_at IS NULL OR jl.deleted_at = '0000-00-00') -- sesuaikan jika tidak pakai soft delete di jl
+            GROUP BY
+            p.id, p.period_no, p.starts_on, p.ends_on, fy.year;
         ");
+
 
         // -- Balance Sheet (ringkas)
         DB::statement("
