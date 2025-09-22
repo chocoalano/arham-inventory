@@ -52,12 +52,22 @@ class RolePermissionSeeder extends Seeder
         // 'warehouse',
         // 'supplier',
 
-        'account',
-        'account_mapping',
-        'cost_center',
-        'fiscal_year',
-        'journal',
-        'period',
+        // 'account',
+        // 'account_mapping',
+        // 'cost_center',
+        // 'fiscal_year',
+        // 'journal',
+        // 'period',
+        // 'product_link',
+
+        'bom_product',
+        'batch_material',
+        'category_material',
+        'material',
+        'material_stock_movement',
+        'material_supplier',
+        'unit_conversation',
+        'unit',
     ];
 
     public function run(): void
