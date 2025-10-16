@@ -53,6 +53,11 @@ class ProductVariantsTable
                     ->sortable()
                     ->searchable(),
 
+                TextColumn::make('raw_material.name')
+                    ->label('Jenis Bahan Baku')
+                    ->sortable()
+                    ->searchable(true),
+
                 TextColumn::make('color')
                     ->label('Warna')
                     ->sortable()
