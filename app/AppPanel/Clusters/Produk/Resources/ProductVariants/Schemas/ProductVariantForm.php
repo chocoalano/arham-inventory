@@ -6,6 +6,7 @@ use App\Models\Inventory\Product;
 use App\Models\Inventory\ProductVariant;
 use App\Models\Inventory\Supplier;
 use App\Models\Inventory\Warehouse;
+use App\Models\RawMaterial\RawMaterial;
 use Filament\Actions\Action;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Repeater;
@@ -179,6 +180,13 @@ class ProductVariantForm
                                 ->openUrlInNewTab()
                         )
                         ->required(),
+                    Select::make('raw_material_id')
+                        ->label('Jenis bahan')
+                        ->options(fn() => RawMaterial::query()->orderBy('name')->pluck('name', 'id'))
+                        ->searchable()
+                        ->preload()
+                        ->nullable()
+                        ->helperText('Pilih jenis bahan yang digunakan untuk produk')
                 ])
                 ->columnSpanFull(),
         ]);

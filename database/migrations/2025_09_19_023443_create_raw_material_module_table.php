@@ -176,21 +176,24 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('unit_conversions');
-        Schema::dropIfExists('units');
+        // Drop tables in correct order to avoid foreign key constraint errors
+        // Drop child tables first, then parent tables
 
-        Schema::dropIfExists('raw_material_images');
-        Schema::dropIfExists('raw_materials');
-        Schema::dropIfExists('raw_material_categories');
-
-        Schema::dropIfExists('raw_material_supplier_prices');
-        Schema::dropIfExists('raw_material_suppliers');
+        Schema::dropIfExists('product_bom_items');
+        Schema::dropIfExists('product_boms');
 
         Schema::dropIfExists('raw_material_stock_movements');
         Schema::dropIfExists('raw_material_stocks');
         Schema::dropIfExists('raw_material_batches');
 
-        Schema::dropIfExists('product_bom_items');
-        Schema::dropIfExists('product_boms');
+        Schema::dropIfExists('raw_material_supplier_prices');
+        Schema::dropIfExists('raw_material_suppliers');
+
+        Schema::dropIfExists('raw_material_images');
+        Schema::dropIfExists('raw_materials'); // Drop this before units since it references units
+        Schema::dropIfExists('raw_material_categories');
+
+        Schema::dropIfExists('unit_conversions'); // Drop this before units since it references units
+        Schema::dropIfExists('units'); // Drop units last
     }
 };

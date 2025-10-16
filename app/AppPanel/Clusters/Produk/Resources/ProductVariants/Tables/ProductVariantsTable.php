@@ -78,13 +78,24 @@ class ProductVariantsTable
                             return '-';
                         }
 
-                        return $stocks->map(function ($stock) {
+                        // Batasi jumlah stok yang ditampilkan, misal 5
+                        $limitedStocks = $stocks->take(5);
+
+                        $output = $limitedStocks->map(function ($stock) {
                             $warehouse = e($stock->warehouse?->name ?? '-');
                             $qty = (int) $stock->qty;
                             $style = $qty <= 0 ? 'style="color:#dc2626;"' : '';
                             return "<div {$style}>{$warehouse}: <strong>{$qty}</strong></div>";
                         })->implode('');
+
+                        // Jika ada stok yang tidak ditampilkan, tambahkan indikator
+                        if ($stocks->count() > $limitedStocks->count()) {
+                            $output .= '<div style="color:#6b7280;">...dan lainnya</div>';
+                        }
+
+                        return $output;
                     })
+                    ->limit(5)
                     ->html()
                     ->sortable(false)
                     ->toggleable(),

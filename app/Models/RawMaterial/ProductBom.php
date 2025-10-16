@@ -13,8 +13,9 @@ class ProductBom extends Model
 {
     use HasFactory;
     protected $table = 'product_boms';
-    protected $fillable = ['product_id','product_variant_id','version','is_active','note'];
+    protected $fillable = ['product_id','product_variant_id','version','is_active','note', 'tax_percent', 'total_operational_cost'];
     public function product(): BelongsTo { return $this->belongsTo(Product::class); }
     public function productVariant(): BelongsTo { return $this->belongsTo(ProductVariant::class); }
     public function items(): HasMany { return $this->hasMany(ProductBomItem::class); }
+    public function operationalCosts(): HasMany { return $this->hasMany(OperationalCost::class, 'bom_id'); }
 }

@@ -9,7 +9,6 @@ use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\Rule;
 
 class FormBom

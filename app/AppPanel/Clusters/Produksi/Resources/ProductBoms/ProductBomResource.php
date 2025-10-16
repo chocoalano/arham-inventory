@@ -5,6 +5,7 @@ namespace App\AppPanel\Clusters\Produksi\Resources\ProductBoms;
 use App\AppPanel\Clusters\Produksi\ProduksiCluster;
 use App\AppPanel\Clusters\Produksi\Resources\ProductBoms\Components\FormBomItem;
 use App\AppPanel\Clusters\Produksi\Resources\ProductBoms\Components\FormBom;
+use App\AppPanel\Clusters\Produksi\Resources\ProductBoms\Components\FormOperationalCost;
 use App\AppPanel\Clusters\Produksi\Resources\ProductBoms\Pages\ManageProductBoms;
 use App\Models\RawMaterial\ProductBom;
 use BackedEnum;
@@ -14,10 +15,13 @@ use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\IconEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
@@ -48,18 +52,71 @@ class ProductBomResource extends Resource
         return $schema
             ->components([
                 Section::make()
-                    ->description("Form BOM produk")
-                    ->schema(FormBom::form())
-                    ->columns(2)
-                    ->columnSpanFull(),
-                Repeater::make('items')
-                    ->relationship('items')
-                    ->schema(FormBomItem::form())
-                    ->columns(3)
-                    ->columnSpanFull()
-            ]);
-    }
-
+                            ->description("Form BOM produk")
+                            ->schema(FormBom::form())
+                            ->columns(2)
+                            ->columnSpanFull(),
+                        Repeater::make('items')
+                            ->relationship('items')
+                            ->schema(FormBomItem::form())
+                            ->columns(4)
+                            ->columnSpanFull(),
+                        Repeater::make('operational_costs')
+                            ->relationship('operationalCosts')
+                            ->live()
+                            ->schema([
+                                TextInput::make('name')
+                                    ->label('Nama Biaya Operasional')
+                                    ->helperText('Masukkan nama biaya operasional yang mudah dikenali, misalnya: Listrik, Air, Transportasi.')
+                                    ->required(),
+                                TextInput::make('price')
+                                    ->label('Harga')
+                                    ->numeric()
+                                    ->helperText('Isi dengan angka tanpa tanda pemisah atau simbol mata uang. Contoh: 15000')
+                                    ->required()
+                                    ->reactive(),
+                            ])
+                            ->columns(2)
+                            ->columnSpanFull(),
+                        Section::make()
+                            ->description('Input Pajak (%) dan Summary Biaya Operational Cost')
+                            ->columnSpanFull()
+                            ->columns(2)
+                            ->schema([
+                                TextInput::make('tax_percent')
+                                    ->label('Pajak (%)')
+                                    ->numeric()
+                                    ->default(0)
+                                    ->reactive()
+                                    ->afterStateUpdated(function ($state, $get, $set) {
+                                        $costs = $get('operational_costs') ?? [];
+                                        $taxPercent = (float) ($state ?? 0);
+                                        $sum = collect($costs)->sum(fn($c) => (float) ($c['price'] ?? 0));
+                                        $total = $sum + ($sum * $taxPercent / 100);
+                                        $set('total_operational_cost', round($total, 2));
+                                    }),
+                                TextInput::make('total_operational_cost')
+                                    ->label('Total Biaya Operational Cost')
+                                    ->extraAttributes(['readonly' => true, 'style' => 'background-color: #f0f0f0;'])
+                                    ->reactive()
+                                    ->default(fn ($get) => 0)
+                                    ->afterStateHydrated(function ($set, $get, $state) {
+                                        $costs = $get('operational_costs') ?? [];
+                                        $taxPercent = (float) ($get('tax_percent') ?? 0);
+                                        $sum = collect($costs)->sum(fn($c) => (float) ($c['price'] ?? 0));
+                                        $total = $sum + ($sum * $taxPercent / 100);
+                                        $set('total_operational_cost', round($total, 2));
+                                    })
+                                    ->afterStateUpdated(function ($set, $get, $state) {
+                                        $costs = $get('operational_costs') ?? [];
+                                        $taxPercent = (float) ($get('tax_percent') ?? 0);
+                                        $sum = collect($costs)->sum(fn($c) => (float) ($c['price'] ?? 0));
+                                        $total = $sum + ($sum * $taxPercent / 100);
+                                        $set('total_operational_cost', round($total, 2));
+                                    }),
+                            ]),
+                ]);
+            }
     public static function infolist(Schema $schema): Schema
     {
         return $schema

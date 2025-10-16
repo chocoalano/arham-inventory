@@ -50,4 +50,6 @@ class RawMaterial extends Model
         }
         return (float) $q->sum('quantity');
     }
+
+    public function type_material():BelongsTo{ return $this->belongsTo(RawMaterial::class, 'type_material_id');}
 }

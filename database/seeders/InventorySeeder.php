@@ -7,7 +7,6 @@ use App\Models\Inventory\ProductVariant;
 use App\Models\Inventory\Supplier;
 use App\Models\Inventory\Transaction;
 use App\Models\Inventory\Warehouse;
-use App\Models\Inventory\WarehouseVariantStock;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\Model;

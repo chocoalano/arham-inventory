@@ -42,23 +42,23 @@ class RolePermissionSeeder extends Seeder
      * Daftar resource yang diberi permission.
      */
     private const RESOURCES = [
-        // 'user',
-        // 'role',
-        // 'product',
-        // 'product_variant',
-        // 'invoice',
-        // 'payment',
-        // 'transaction',
-        // 'warehouse',
-        // 'supplier',
+        'user',
+        'role',
+        'product',
+        'product_variant',
+        'invoice',
+        'payment',
+        'transaction',
+        'warehouse',
+        'supplier',
 
-        // 'account',
-        // 'account_mapping',
-        // 'cost_center',
-        // 'fiscal_year',
-        // 'journal',
-        // 'period',
-        // 'product_link',
+        'account',
+        'account_mapping',
+        'cost_center',
+        'fiscal_year',
+        'journal',
+        'period',
+        'product_link',
 
         'bom_product',
         'batch_material',
@@ -75,22 +75,22 @@ class RolePermissionSeeder extends Seeder
         DB::transaction(function () {
 
             // 1) BUAT / UPDATE ROLES (idempotent)
-            // $superadminRole = Role::firstOrCreate(['name' => 'Superadmin'], [
-            //     'label' => 'Superadmin',
-            //     'desc' => 'Akses penuh ke sistem.',
-            // ]);
-            // $adminRole = Role::firstOrCreate(['name' => 'admin'], [
-            //     'label' => 'Administrator',
-            //     'desc' => '
-            //     Akses transaksi(CRUD Penjualan), Update=>hanya bisa max 1 jam setelah data transaksi dibuat,
-            //     Akses transaksi(CRUD Perpindahan produk antar gudang), Update=>hanya bisa max 1 jam setelah data transaksi dibuat,
-            //     Akses transaksi(CRUD Pengembalian produk), Update=>hanya bisa max 1 jam setelah data transaksi dibuat,
-            //     Cetak faktur faktur penjualan & packing slip,
-            //     Read Only produk/varian produk,
-            //     read & update profile,
-            //     Data yang ditampilkan hanya data sesuai current area.
-            //     ',
-            // ]);
+            $superadminRole = Role::firstOrCreate(['name' => 'Superadmin'], [
+                'label' => 'Superadmin',
+                'desc' => 'Akses penuh ke sistem.',
+            ]);
+            $adminRole = Role::firstOrCreate(['name' => 'admin'], [
+                'label' => 'Administrator',
+                'desc' => '
+                Akses transaksi(CRUD Penjualan), Update=>hanya bisa max 1 jam setelah data transaksi dibuat,
+                Akses transaksi(CRUD Perpindahan produk antar gudang), Update=>hanya bisa max 1 jam setelah data transaksi dibuat,
+                Akses transaksi(CRUD Pengembalian produk), Update=>hanya bisa max 1 jam setelah data transaksi dibuat,
+                Cetak faktur faktur penjualan & packing slip,
+                Read Only produk/varian produk,
+                read & update profile,
+                Data yang ditampilkan hanya data sesuai current area.
+                ',
+            ]);
 
             // 2) BUAT GROUP & PERMISSIONS per resource (idempotent)
             $allPermissionIds = [];
@@ -120,60 +120,60 @@ class RolePermissionSeeder extends Seeder
 
             // 3) ASSIGN PERMISSIONS KE ROLES
             // Admin -> semua permission
-            // $superadminRole->permissions()->sync($allPermissionIds);
+            $superadminRole->permissions()->sync($allPermissionIds);
 
             // Editor -> full product & variant, bisa lihat invoice/payment/warehouse
-            // $adminPerms = Permission::query()
-            //     ->where(function ($q) {
-            //         // full untuk product & product_variant
-            //         $q->whereIn('permission_group_id', PermissionGroup::query()
-            //             ->whereIn('name', ['transaction'])
-            //             ->pluck('id'))
-            //             // viewAny/view untuk invoice, payment, warehouse
-            //             ->orWhereIn('name', [
-            //                 'viewAny-invoice',
-            //                 'view-invoice',
-            //                 'print-invoice',
-            //                 'viewAny-payment',
-            //                 'view-payment',
-            //                 'print-payment',
-            //                 'viewAny-warehouse',
-            //                 'view-warehouse',
-            //             ]);
-            //     })
-            //     ->pluck('id')
-            //     ->all();
+            $adminPerms = Permission::query()
+                ->where(function ($q) {
+                    // full untuk product & product_variant
+                    $q->whereIn('permission_group_id', PermissionGroup::query()
+                        ->whereIn('name', ['transaction'])
+                        ->pluck('id'))
+                        // viewAny/view untuk invoice, payment, warehouse
+                        ->orWhereIn('name', [
+                            'viewAny-invoice',
+                            'view-invoice',
+                            'print-invoice',
+                            'viewAny-payment',
+                            'view-payment',
+                            'print-payment',
+                            'viewAny-warehouse',
+                            'view-warehouse',
+                        ]);
+                })
+                ->pluck('id')
+                ->all();
 
-            // $adminRole->permissions()->sync($adminPerms);
+            $adminRole->permissions()->sync($adminPerms);
 
 
-            // $superadminUser = User::updateOrCreate(
-            //     ['email' => 'superadmin@example.com'],
-            //     [
-            //         'name' => 'Superadmin User',
-            //         'password' => Hash::make('password'),
-            //         'email_verified_at' => now()
-            //         ]
-            // );
-            // $superadminUser->roles()->syncWithoutDetaching([$superadminRole->id]);
-            // $admin1User = User::updateOrCreate(
-            //     ['email' => 'admin1@example.com'],
-            //     [
-            //         'name' => 'Admin1 User',
-            //         'password' => Hash::make('password'),
-            //         'email_verified_at' => now()
-            //         ]
-            // );
-            // $admin1User->roles()->syncWithoutDetaching([$adminRole->id]);
-            // $admin2User = User::updateOrCreate(
-            //     ['email' => 'admin2@example.com'],
-            //     [
-            //         'name' => 'Admin2 User',
-            //         'password' => Hash::make('password'),
-            //         'email_verified_at' => now()
-            //         ]
-            // );
-            // $admin2User->roles()->syncWithoutDetaching([$adminRole->id]);
+            $superadminUser = User::updateOrCreate(
+                ['email' => 'superadmin@example.com'],
+                [
+                    'name' => 'Superadmin User',
+                    'password' => Hash::make('password'),
+                    'email_verified_at' => now()
+                    ]
+            );
+            $superadminUser->roles()->syncWithoutDetaching([$superadminRole->id]);
+            $admin1User = User::updateOrCreate(
+                ['email' => 'admin1@example.com'],
+                [
+                    'name' => 'Admin1 User',
+                    'password' => Hash::make('password'),
+                    'email_verified_at' => now()
+                    ]
+            );
+            $admin1User->roles()->syncWithoutDetaching([$adminRole->id]);
+            $admin2User = User::updateOrCreate(
+                ['email' => 'admin2@example.com'],
+                [
+                    'name' => 'Admin2 User',
+                    'password' => Hash::make('password'),
+                    'email_verified_at' => now()
+                    ]
+            );
+            $admin2User->roles()->syncWithoutDetaching([$adminRole->id]);
         });
     }
 
