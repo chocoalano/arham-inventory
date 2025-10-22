@@ -163,11 +163,6 @@ class ProductVariantForm
                         ])
                         ->default('active'),
 
-                    TextInput::make('qty')
-                        ->label('Jumlah Quantity')
-                        ->numeric()
-                        ->helperText('Masukan jumlah quantity untuk varian ini dengan nilai numerik (cth: 1)'),
-
                     Select::make('set_warehouse')
                         ->label('Pilih Lokasi Gudang')
                         ->helperText('Pilih gudang tempat varian produk ini akan disimpan. Ini akan menjadi gudang default.')

@@ -8,9 +8,12 @@ use App\Filament\Imports\InventoryMovementImporter;
 use App\Models\Inventory\ProductVariant;
 use App\Models\Inventory\Transaction;
 use App\Models\Inventory\WarehouseVariantStock;
+use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
 use Filament\Actions\ExportAction;
 use Filament\Actions\ImportAction;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ManageRecords;
 use Illuminate\Database\Eloquent\Model;
@@ -139,7 +142,27 @@ class ManageInventoryMovements extends ManageRecords
                 ->importer(InventoryMovementImporter::class),
             ExportAction::make()
                 ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin') || auth()->user()?->hasPermissionTo('export-transaction'))
-                ->exporter(InventoryMovementExporter::class)
+                ->exporter(InventoryMovementExporter::class),
+            Action::make('Adjust Stock')
+                ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin') || auth()->user()?->hasPermissionTo('export-transaction'))
+                ->requiresConfirmation()
+                ->form([
+                    Select::make('from_warehouse_id')
+                        ->relationship(name: 'from_warehouse', titleAttribute: 'name')
+                        ->searchable()
+                        ->preload(),
+                    Select::make('product_variant_id')
+                        ->relationship(name: 'variant', titleAttribute: 'sku_variant')
+                        ->searchable()
+                        ->preload(),
+                    TextInput::make('qty')
+                        ->label('Adjustment Qty')
+                        ->helperText('Masukkan jumlah penyesuaian untuk varian produk ini. Masukkan dalam angka.')
+                        ->numeric()->minValue(1),
+                ])
+                ->action(function (array $data): void {
+                    dd($data);
+                })
         ];
     }
 }
