@@ -137,12 +137,6 @@ class ManageInventoryMovements extends ManageRecords
                         throw $ve;
                     }
                 }),
-            ImportAction::make()
-                ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin') || auth()->user()?->hasPermissionTo('import-transaction'))
-                ->importer(InventoryMovementImporter::class),
-            ExportAction::make()
-                ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin') || auth()->user()?->hasPermissionTo('export-transaction'))
-                ->exporter(InventoryMovementExporter::class),
             Action::make('Adjust Stock')
                 ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin') || auth()->user()?->hasPermissionTo('export-transaction'))
                 ->requiresConfirmation()
@@ -150,19 +144,83 @@ class ManageInventoryMovements extends ManageRecords
                     Select::make('from_warehouse_id')
                         ->relationship(name: 'from_warehouse', titleAttribute: 'name')
                         ->searchable()
-                        ->preload(),
+                        ->preload()
+                        ->reactive(),
                     Select::make('product_variant_id')
-                        ->relationship(name: 'variant', titleAttribute: 'sku_variant')
+                        ->label('Varian Produk (ada di gudang)')
+                        ->options(function (callable $get) {
+                            $wid = $get('from_warehouse_id');
+                            if (!$wid) return [];
+                            return WarehouseVariantStock::query()
+                                ->where('warehouse_id', $wid)
+                                ->where('qty', '>', 0)
+                                ->join('product_variants as pv', 'pv.id', '=', 'warehouse_variant_stocks.product_variant_id')
+                                ->orderBy('pv.sku_variant')
+                                ->pluck('pv.sku_variant', 'warehouse_variant_stocks.product_variant_id')
+                                ->toArray();
+                        })
                         ->searchable()
-                        ->preload(),
+                        ->reactive()
+                        ->required(),
                     TextInput::make('qty')
                         ->label('Adjustment Qty')
-                        ->helperText('Masukkan jumlah penyesuaian untuk varian produk ini. Masukkan dalam angka.')
+                        ->helperText('Masukkan jumlah penyesuaian untuk varian produk ini. Masukkan dalam angka positif untuk menambah stok.')
                         ->numeric()->minValue(1),
                 ])
                 ->action(function (array $data): void {
-                    dd($data);
-                })
+                    DB::beginTransaction();
+                    try {
+                        $warehouseId = (int) ($data['from_warehouse_id'] ?? 0);
+                        $variantId = (int) ($data['product_variant_id'] ?? 0);
+                        $qty = (int) ($data['qty'] ?? 0);
+
+                        if ($warehouseId <= 0 || $variantId <= 0 || $qty <= 0) {
+                            Notification::make()
+                                ->title('Data tidak valid untuk penyesuaian stok')
+                                ->danger()
+                                ->send();
+                            DB::rollBack();
+                            return;
+                        }
+
+                        // Lock the stock row if exists
+                        $stock = WarehouseVariantStock::query()
+                            ->where('warehouse_id', $warehouseId)
+                            ->where('product_variant_id', $variantId)
+                            ->lockForUpdate()
+                            ->first();
+
+                        if ($stock) {
+                            $stock->increment('qty', $qty);
+                        } else {
+                            WarehouseVariantStock::create([
+                                'warehouse_id' => $warehouseId,
+                                'product_variant_id' => $variantId,
+                                'qty' => $qty,
+                                'reserved_qty' => 0,
+                            ]);
+                        }
+
+                        DB::commit();
+
+                        Notification::make()
+                            ->title('Penyesuaian stok berhasil')
+                            ->success()
+                            ->send();
+                    } catch (\Throwable $e) {
+                        DB::rollBack();
+                        Notification::make()
+                            ->title('Gagal menyesuaikan stok: ' . $e->getMessage())
+                            ->danger()
+                            ->send();
+                    }
+                }),
+            ImportAction::make()
+                ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin') || auth()->user()?->hasPermissionTo('import-transaction'))
+                ->importer(InventoryMovementImporter::class),
+            ExportAction::make()
+                ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin') || auth()->user()?->hasPermissionTo('export-transaction'))
+                ->exporter(InventoryMovementExporter::class),
         ];
     }
 }
