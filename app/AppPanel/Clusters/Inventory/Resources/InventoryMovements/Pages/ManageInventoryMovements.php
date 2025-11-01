@@ -150,14 +150,19 @@ class ManageInventoryMovements extends ManageRecords
                         ->label('Varian Produk (ada di gudang)')
                         ->options(function (callable $get) {
                             $wid = $get('from_warehouse_id');
-                            if (!$wid) return [];
-                            return WarehouseVariantStock::query()
-                                ->where('warehouse_id', $wid)
-                                ->where('qty', '>', 0)
-                                ->join('product_variants as pv', 'pv.id', '=', 'warehouse_variant_stocks.product_variant_id')
-                                ->orderBy('pv.sku_variant')
-                                ->pluck('pv.sku_variant', 'warehouse_variant_stocks.product_variant_id')
-                                ->toArray();
+                            if ($wid === null && (int)$wid <= 0) {
+                                return [];
+                            }else{
+                                $x = WarehouseVariantStock::query()
+                                    ->where('warehouse_id', $wid)
+                                    ->join('product_variants as pv', 'pv.id', '=', 'warehouse_variant_stocks.product_variant_id')
+                                    ->orderBy('pv.sku_variant')
+                                    ->pluck('pv.sku_variant', 'warehouse_variant_stocks.product_variant_id')
+                                    ->toArray();
+                                    return array_map(function ($variant) use ($x) {
+                                        return $variant;
+                                    }, $x);
+                            }
                         })
                         ->searchable()
                         ->reactive()

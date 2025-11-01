@@ -7,7 +7,6 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -195,5 +194,5 @@ class ProductVariant extends Model
         return $candidate;
     }
 
-    public function raw_material():\Illuminate\Database\Eloquent\Relations\BelongsTo { return $this->belongsTo(RawMaterial::class, 'raw_material_id', 'id'); }
+    public function raw_material():BelongsTo { return $this->belongsTo(RawMaterial::class, 'raw_material_id', 'id'); }
 }

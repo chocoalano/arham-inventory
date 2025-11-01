@@ -1,0 +1,52 @@
+
+.error{
+	h1{
+	    font-size: 16rem;
+	    font-weight: 900;
+	    letter-spacing: 1rem;
+	    line-height: 1.1;
+	    margin-bottom: 30px; 
+        color: $theme-color;
+        
+        @media #{$large-mobile}{
+            font-size: 13rem;
+        }
+
+        @media #{$small-mobile}{
+            font-size: 10rem;
+        }
+
+        @media #{$extra-small-mobile}{
+            font-size: 8rem;
+        }
+	}
+	h2{
+		font-size: 25px;
+    }
+    
+    .searchform {
+        display: flex;
+        justify-content: flex-start;
+        &__input{
+            border: 1px solid #eeeeee;
+            height: 45px;
+            width: 100%;
+            padding-left: 15px;
+        }
+        &__submit{
+            border: none;
+            background-color: $theme-color;
+            width: 70px;
+            color: #fff;
+            cursor: pointer;
+        }
+    }
+}
+
+.ptb--100{
+	padding-top: 100px;
+	padding-bottom: 100px;
+}
+.mb--50{
+	margin-bottom: 50px;
+}

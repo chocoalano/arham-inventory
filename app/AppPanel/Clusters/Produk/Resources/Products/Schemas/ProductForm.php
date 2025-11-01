@@ -68,8 +68,8 @@ class ProductForm
                                     FileUpload::make('image_path')
                                         ->label('File')
                                         ->image()
-                                        ->directory(fn (Get $get) => 'products/'.$get('sku'))
-                                        ->imageEditor()
+                                        ->directory('products')
+                                        ->disk('public')
                                         ->required()
                                         ->columnSpanFull(),
                                     Toggle::make('is_primary')

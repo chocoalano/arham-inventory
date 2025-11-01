@@ -21,6 +21,11 @@ class Transaction extends Model
     public const STATUS_POSTED = 'posted';
     public const STATUS_CANCELLED = 'cancelled';
 
+    // ===== Type (ENUM Indonesia) =====
+    public const TYPE_PENJUALAN    = 'penjualan';
+    public const TYPE_PEMINDAHAN   = 'pemindahan';
+    public const TYPE_PENGEMBALIAN = 'pengembalian';
+
     protected $fillable = [
         'reference_number',
         'type',
@@ -39,10 +44,11 @@ class Transaction extends Model
     ];
 
     protected $casts = [
-        'transaction_date' => 'datetime',
-        'posted_at' => 'datetime',
-        'item_count' => 'int',
-        'grand_total' => 'decimal:2',
+        'type'                  => 'string',
+        'transaction_date'      => 'datetime',
+        'posted_at'             => 'datetime',
+        'item_count'            => 'int',
+        'grand_total'           => 'decimal:2',
     ];
 
     protected static function booted(): void
