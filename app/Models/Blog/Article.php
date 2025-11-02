@@ -78,7 +78,7 @@ class Article extends Model
             ArticleCategory::class,
             'article_category',
             'article_id',
-            'category_id'
+            'article_categories_id'
         );
     }
 
