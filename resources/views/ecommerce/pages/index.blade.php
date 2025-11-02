@@ -398,8 +398,8 @@
                     <div class="blog-post-slider-container ptk-slider">
                         @forelse($blogPosts as $post)
                             @php
-                                $img = data_get($post, 'main_image')
-                                    ?: data_get($post, 'media.0.url')
+                                $img = asset('storage/'.data_get($post, 'main_image'))
+                                    ?: asset('storage/'.data_get($post, 'media.0.url'))
                                     ?: asset('ecommerce/images/placeholder/800x517.png');
                                 $url = data_get($post, 'url') ?? url('/articles/' . data_get($post, 'slug'));
                             @endphp
