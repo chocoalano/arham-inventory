@@ -27,10 +27,10 @@
                             <div class="language-currency-list hidden" id="accountList">
                                 @if (Auth::guard('customer')->check())
                                     <ul>
-                                        <li><a href="{{ route('profile.show') }}">Profil</a></li>
-                                        <li><a href="{{ route('order.view') }}">Pesanan</a></li>
+                                        <li><a href="{{ route('auth.profile') }}">Profil</a></li>
+                                        <li><a href="{{ route('auth.profile') }}#orders">Pesanan</a></li>
                                         <li>
-                                            <form method="POST" action="{{ route('logout') }}" style="display:inline;">
+                                            <form method="POST" action="{{ route('auth.logout') }}" style="display:inline;">
                                                 @csrf
                                                 <button type="submit" class="btn btn-link p-0 m-0 align-baseline" style="color:inherit;text-decoration:none;">Keluar</button>
                                             </form>

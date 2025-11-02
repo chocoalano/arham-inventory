@@ -20,13 +20,14 @@ class DatabaseSeeder extends Seeder
         // Panggil seeder lain yang dibutuhkan di sini.
         // Seeder ini akan membuat role, permission, dan user dummy.
         $this->call([
-            RolePermissionSeeder::class,
-            InventorySeeder::class,
-            FiscalCalendarSeeder::class,
-            ChartOfAccountsSeeder::class,
-            AccountMappingSeeder::class,
-            CostCenterSeeder::class,
-            AccountingDemoSeeder::class,
+            // RolePermissionSeeder::class,
+            // InventorySeeder::class,
+            // FiscalCalendarSeeder::class,
+            // ChartOfAccountsSeeder::class,
+            // AccountMappingSeeder::class,
+            // CostCenterSeeder::class,
+            // AccountingDemoSeeder::class,
+            ArticleSeeder::class,
         ]);
     }
 }

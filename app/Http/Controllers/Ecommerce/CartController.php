@@ -4,296 +4,616 @@ namespace App\Http\Controllers\Ecommerce;
 
 use App\Http\Controllers\Controller;
 use App\Models\Ecommerce\Cart;
-use App\Models\Ecommerce\CartItem;
-use App\Models\Ecommerce\ProductVariant;
+use App\Models\Inventory\Product;
+use App\Models\Inventory\ProductVariant;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
 
 class CartController extends Controller
 {
-    /**
-     * GET /cart
-     */
-    public function index(Request $request)
+    public function index()
     {
-        $cart = $this->resolveCart($request);
-        $cart->load(['items.product', 'items.variant']);
+        $customer = Auth::guard('customer')->user();
+        $cart = $customer?->cart()
+            ->with(['items.product', 'items.variant'])
+            ->first();
 
-        return view('ecommerce.pages.auth.cart', compact('cart'));
+        $cartItems = $cart?->items ?? collect();
+        $subtotal = $cartItems->sum(function ($ci) {
+            $qty = (int) ($ci->quantity ?? $ci->qty ?? 0);
+
+            $gross = (float) (
+                $ci->price
+                ?? optional($ci->variant)->price
+                ?? optional($ci->product)->price
+                ?? 0
+            );
+            $discount = (float) (
+                $ci->discount_amount
+                ?? $ci->discount
+                ?? 0
+            );
+            $netUnit = max(0, $gross - $discount);
+            return $qty * $netUnit;
+        });
+        $shippingFee = 0;
+        $grandTotal = $subtotal + $shippingFee;
+        $itemsCount = (int) $cartItems->sum(function ($ci) {
+            return (int) ($ci->quantity ?? $ci->qty ?? 0);
+        });
+
+        return view('ecommerce.pages.auth.cart', compact(
+            'cart',
+            'cartItems',
+            'subtotal',
+            'shippingFee',
+            'grandTotal',
+            'itemsCount'
+        ));
     }
 
     /**
-     * PATCH /cart/{cart}
-     * Body: { item_id?: int, variant_id?: int, qty: int }
-     * Catatan: Blade kita kirimkan item_id, tapi tetap dukung variant_id.
+     * Add item to cart (AJAX)
+     */
+    public function store(Request $request)
+    {
+        // Check authentication
+        if (! Auth::guard('customer')->check()) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Silakan login terlebih dahulu',
+                ], 401);
+            }
+
+            return redirect()->route('login.register')
+                ->with('warning', 'Silakan login terlebih dahulu');
+        }
+
+        // Validation
+        $validator = Validator::make($request->all(), [
+            'product_id' => 'nullable|exists:products,id',
+            'sku' => 'nullable|string|exists:product_variants,sku_variant',
+            'variant_id' => 'required|exists:product_variants,id',
+            'qty' => 'required|integer|min:1|max:999',
+        ]);
+
+        if ($validator->fails()) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Data tidak valid',
+                    'errors' => $validator->errors(),
+                ], 422);
+            }
+
+            return back()->withErrors($validator)->withInput();
+        }
+
+        try {
+            DB::beginTransaction();
+
+            $customer = Auth::guard('customer')->user();
+
+            // Find product
+            $input = $request->all();
+            $product = null;
+            $variant = null;
+
+            if ($request->filled('product_id')) {
+                $product = Product::find($input['product_id']);
+            } elseif ($request->filled('sku')) {
+                // 'sku' refers to product_variants.sku_variant per validation
+                $variant = ProductVariant::with('product')->where('sku_variant', $input['sku'])->first();
+                $product = $variant?->product;
+            } else {
+                // use the variant_id to find the variant and its product safely
+                $variant = ProductVariant::with('product')->find($input['variant_id']);
+                $product = $variant?->product;
+            }
+
+            if (! $product) {
+                throw new \Exception('Produk tidak ditemukan');
+            }
+
+            // Find variant
+            $variant = ProductVariant::with('stocks')
+                ->where('id', $request->variant_id)
+                ->where('product_id', $product->id)
+                ->first();
+
+            if (! $variant) {
+                throw new \Exception('Varian tidak ditemukan');
+            }
+
+            // Check stock
+            $totalStock = $variant->stocks->sum('qty');
+            if ($totalStock < $request->qty) {
+                throw new \Exception("Stok tidak mencukupi. Tersedia: {$totalStock} pcs");
+            }
+
+            // Get or create cart
+            $cart = $customer->getOrCreateCart();
+
+            // Add or update item
+            $existingItem = $cart->items()
+                ->where('product_id', $product->id)
+                ->where('product_variant_id', $variant->id)
+                ->first();
+
+            if ($existingItem) {
+                $newQty = $existingItem->quantity + $request->qty;
+
+                // Check if new quantity exceeds stock
+                if ($newQty > $totalStock) {
+                    throw new \Exception("Stok tidak mencukupi. Tersedia: {$totalStock} pcs");
+                }
+
+                $existingItem->update(['quantity' => $newQty]);
+            } else {
+                $cart->items()->create([
+                    'product_id' => $product->id,
+                    'product_variant_id' => $variant->id,
+                    'quantity' => $request->qty,
+                ]);
+            }
+
+            DB::commit();
+
+            // Get updated cart count
+            $cartCount = $cart->items->sum('quantity');
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Produk berhasil ditambahkan ke keranjang',
+                    'cart_count' => $cartCount,
+                    'redirect' => false,
+                ]);
+            }
+
+            return redirect()->route('cart.index')
+                ->with('success', 'Produk berhasil ditambahkan ke keranjang');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('[CartController] Add to cart error: '.$e->getMessage());
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 400);
+            }
+
+            return back()->with('error', $e->getMessage());
+        }
+    }
+
+    /**
+     * Update cart item quantity
      */
     public function update(Request $request, Cart $cart)
     {
-        $this->assertOwner($cart);
+        // 1) Auth & kepemilikan cart
+        $customer = Auth::guard('customer')->user();
+        if (! $customer) {
+            return $request->expectsJson()
+                ? response()->json(['success' => false, 'message' => 'Unauthorized'], 401)
+                : redirect()->route('login.register');
+        }
+        if ((int) $cart->customer_id !== (int) $customer->id) {
+            return $request->expectsJson()
+                ? response()->json(['success' => false, 'message' => 'Forbidden'], 403)
+                : abort(403);
+        }
 
-        $validated = $request->validate([
-            'item_id'    => ['nullable','integer'],
-            'variant_id' => ['nullable','integer', Rule::exists('product_variants','id')],
-            'qty'        => ['required','integer','min:1'],
+        // 2) Validasi payload (JS kamu kirim { item_id, qty } atau { item_id, quantity })
+        $v = Validator::make($request->all(), [
+            'item_id' => ['required', 'integer'],
+            'qty' => ['nullable', 'integer', 'min:1', 'max:999'],
+            'quantity' => ['nullable', 'integer', 'min:1', 'max:999'],
         ]);
-
-        return DB::transaction(function () use ($cart, $validated) {
-            /** @var CartItem|null $item */
-            $item = null;
-
-            if (!empty($validated['item_id'])) {
-                $item = $cart->items()->with(['product','variant'])
-                    ->whereKey($validated['item_id'])
-                    ->first();
-            } elseif (!empty($validated['variant_id'])) {
-                $item = $cart->items()->with(['product','variant'])
-                    ->where('product_variant_id', $validated['variant_id'])
-                    ->first();
+        $v->after(function ($va) use ($request) {
+            if (! $request->filled('qty') && ! $request->filled('quantity')) {
+                $va->errors()->add('qty', 'Field qty/quantity wajib diisi.');
             }
-
-            if (!$item) {
-                return response()->json([
-                    'message' => 'Item tidak ditemukan di keranjang.'
-                ], 404);
-            }
-
-            $item->quantity = (int) $validated['qty'];
-            $item->save();
-
-            $cart->load(['items.product','items.variant']);
-            [$cartSubtotal, $itemsCount] = $this->computeCart($cart);
-
-            $lineSubtotal = $this->priceOf($item) * (int)$item->quantity;
-
-            return response()->json([
-                'line_subtotal'     => (int) round($lineSubtotal),
-                'cart_subtotal'     => (int) round($cartSubtotal),
-                'cart_items_count'  => (int) $itemsCount,
-                'item_id'           => $item->id,
-            ]);
         });
-    }
+        if ($v->fails()) {
+            return $request->expectsJson()
+                ? response()->json(['success' => false, 'errors' => $v->errors()], 422)
+                : back()->withErrors($v);
+        }
 
-    /**
-     * PATCH /cart/{cart}/sync
-     * Body: { items: [ {item_id: int, qty: int}, ... ] }
-     */
-    public function sync(Request $request, Cart $cart)
-    {
-        $this->assertOwner($cart);
+        $itemId = (int) $request->integer('item_id');
+        $newQty = (int) ($request->integer('qty') ?: $request->integer('quantity'));
 
-        $validated = $request->validate([
-            'items'           => ['required','array','min:1'],
-            'items.*.item_id' => ['required','integer'],
-            'items.*.qty'     => ['required','integer','min:1'],
-        ]);
-
-        return DB::transaction(function () use ($cart, $validated) {
-            $lineMap = [];
-
-            foreach ($validated['items'] as $row) {
-                /** @var CartItem|null $item */
-                $item = $cart->items()->with(['product','variant'])
-                    ->whereKey($row['item_id'])
+        try {
+            $payload = DB::transaction(function () use ($cart, $itemId, $newQty) {
+                // 3) Ambil item pada cart ini
+                $item = $cart->items()
+                    ->with(['product', 'variant', 'variant.stocks'])
+                    ->whereKey($itemId)
+                    ->lockForUpdate()
                     ->first();
 
-                if (!$item) {
-                    // Skip silently; bisa juga return 404 kalau mau strict
-                    continue;
+                if (! $item) {
+                    throw new \Exception('Item tidak ditemukan');
                 }
 
-                $item->quantity = (int) $row['qty'];
-                $item->save();
+                // 4) Cek stok (fleksibel; kalau tidak ada data stok, cek dilewati)
+                $totalStock = null;
+                if ($item->variant) {
+                    try {
+                        $totalStock = (int) $item->variant->stocks()->sum('qty');
+                    } catch (\Throwable $e) {
+                    }
+                    foreach ([
+                        $item->variant->total_stocks ?? null,
+                        $item->variant->stock_qty ?? null,
+                        $item->variant->stock_quantity ?? null,
+                        $item->variant->qty ?? null,
+                    ] as $c) {
+                        if (is_numeric($c)) {
+                            $totalStock = (int) $c;
+                            break;
+                        }
+                    }
+                } elseif ($item->product) {
+                    foreach ([
+                        $item->product->stock_qty ?? null,
+                        $item->product->stock_quantity ?? null,
+                        $item->product->inventory ?? null,
+                        $item->product->qty ?? null,
+                    ] as $c) {
+                        if (is_numeric($c)) {
+                            $totalStock = (int) $c;
+                            break;
+                        }
+                    }
+                }
+                if ($totalStock !== null && $newQty > $totalStock) {
+                    throw new \Exception("Stok tidak mencukupi. Tersedia: {$totalStock} pcs");
+                }
 
-                $lineMap[$item->id] = (int) round($this->priceOf($item) * (int)$item->quantity);
+                // 5) Update quantity saja (tidak ada line_total di DB)
+                $item->update(['quantity' => $newQty]);
+
+                // 6) Hitung subtotal baris (on-the-fly) = qty × (price - discount)
+                $gross = (float) ($item->price
+                            ?? optional($item->variant)->price
+                            ?? optional($item->product)->price
+                            ?? 0);
+                $disc = (float) ($item->discount_amount ?? $item->discount ?? 0);
+                $net = max(0, $gross - $disc);
+                $lineSubtotal = $net * $newQty;
+
+                // 7) Hitung subtotal cart (on-the-fly juga)
+                $cart->load(['items.product', 'items.variant']);
+                $cartSubtotal = (float) $cart->items->sum(function ($ci) {
+                    $g = (float) ($ci->price
+                            ?? optional($ci->variant)->price
+                            ?? optional($ci->product)->price
+                            ?? 0);
+                    $d = (float) ($ci->discount_amount ?? $ci->discount ?? 0);
+                    $n = max(0, $g - $d);
+                    $q = (int) ($ci->quantity ?? 0);
+
+                    return $n * $q;
+                });
+                $itemsCount = (int) $cart->items->sum('quantity');
+
+                return [
+                    'item_id' => $item->id,
+                    'line_subtotal' => $lineSubtotal,   // <- TIDAK disimpan di DB
+                    'cart_subtotal' => $cartSubtotal,   // <- TIDAK disimpan di DB
+                    'cart_items_count' => $itemsCount,
+                ];
+            });
+
+            // 8) Balasan JSON untuk AJAX jQuery di Blade
+            if ($request->expectsJson()) {
+                return response()->json(array_merge([
+                    'success' => true,
+                    'message' => 'Kuantitas berhasil diupdate',
+                ], $payload));
             }
 
-            $cart->load(['items.product','items.variant']);
-            [$cartSubtotal, $itemsCount] = $this->computeCart($cart);
+            return back()->with('success', 'Kuantitas berhasil diupdate');
 
-            return response()->json([
-                'lines'            => $lineMap,           // { item_id: line_subtotal }
-                'cart_subtotal'    => (int) round($cartSubtotal),
-                'cart_items_count' => (int) $itemsCount,
-            ]);
-        });
+        } catch (\Exception $e) {
+            if ($request->expectsJson()) {
+                $code = str_contains(strtolower($e->getMessage()), 'stok') ? 422 : 400;
+
+                return response()->json(['success' => false, 'message' => $e->getMessage()], $code);
+            }
+
+            return back()->with('error', $e->getMessage());
+        }
     }
 
     /**
-     * DELETE /cart/{cart}/items/{item}
+     * Remove item from cart
      */
-    public function destroyItem(Request $request, Cart $cart, CartItem $item)
+    public function destroy(Request $request, $itemId)
     {
-        $this->assertOwner($cart);
+        if (! Auth::guard('customer')->check()) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized',
+                ], 401);
+            }
 
-        if ((int)$item->cart_id !== (int)$cart->id) {
-            abort(404);
+            return redirect()->route('login.register');
         }
 
-        return DB::transaction(function () use ($cart, $item) {
-            $itemId = $item->id;
+        try {
+            $customer = Auth::guard('customer')->user();
+            $cart = $customer->cart;
+
+            if (! $cart) {
+                throw new \Exception('Keranjang tidak ditemukan');
+            }
+
+            $item = $cart->items()->find($itemId);
+
+            if (! $item) {
+                throw new \Exception('Item tidak ditemukan');
+            }
+
             $item->delete();
 
-            $cart->load(['items.product','items.variant']);
-            [$cartSubtotal, $itemsCount] = $this->computeCart($cart);
+            $cartCount = $cart->fresh()->items->sum('quantity');
 
-            return response()->json([
-                'removed_item_id'   => $itemId,
-                'cart_subtotal'     => (int) round($cartSubtotal),
-                'cart_items_count'  => (int) $itemsCount,
-            ]);
-        });
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Item berhasil dihapus',
+                    'cart_count' => $cartCount,
+                ]);
+            }
+
+            return back()->with('success', 'Item berhasil dihapus');
+
+        } catch (\Exception $e) {
+            Log::error('[CartController] Remove error: '.$e->getMessage());
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 400);
+            }
+
+            return back()->with('error', $e->getMessage());
+        }
     }
 
     /**
-     * DELETE /cart/{cart} — kosongkan keranjang
+     * Clear all cart items
      */
-    public function destroy(Cart $cart)
+    public function clear(Request $request)
     {
-        $this->assertOwner($cart);
+        if (! Auth::guard('customer')->check()) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized',
+                ], 401);
+            }
 
-        $cart->items()->delete();
-        $cart->delete();
+            return redirect()->route('login.register');
+        }
 
-        return redirect()->route('cart.index')->with('success', 'Keranjang berhasil dikosongkan.');
+        try {
+            $customer = Auth::guard('customer')->user();
+            $cart = $customer->cart;
+
+            if ($cart) {
+                $cart->clearItems();
+            }
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Keranjang berhasil dikosongkan',
+                    'cart_count' => 0,
+                ]);
+            }
+
+            return back()->with('success', 'Keranjang berhasil dikosongkan');
+
+        } catch (\Exception $e) {
+            Log::error('[CartController] Clear error: '.$e->getMessage());
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal mengosongkan keranjang',
+                ], 400);
+            }
+
+            return back()->with('error', 'Gagal mengosongkan keranjang');
+        }
     }
 
-    public function store(Request $request)
-{
-    $customer = Auth::guard('customer')->user();
+    /**
+     * Bulk update cart item quantities (Sync)
+     */
+    public function sync(Request $request)
+    {
+        if (! Auth::guard('customer')->check()) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized',
+                ], 401);
+            }
 
-    $data = $request->validate([
-        'product_id'         => ['required', 'integer', 'exists:products,id'],
-        'product_variant_id' => ['nullable', 'integer', 'exists:product_variants,id'],
-        'qty'                => ['nullable', 'integer', 'min:1'],
-    ]);
-
-    $qty = (int)($data['qty'] ?? 1);
-    $productId = (int)$data['product_id'];
-    $variantId = $data['product_variant_id'] ?? null;
-
-    // Ambil atau buat cart untuk customer
-    $cart = \App\Models\Ecommerce\Cart::firstOrCreate([
-        'customer_id' => $customer->id,
-    ]);
-
-    // Cari item yang sama (product + variant)
-    $itemQuery = $cart->items()
-        ->where('product_id', $productId)
-        ->where('product_variant_id', $variantId);
-
-    $item = $itemQuery->first();
-
-    // Tentukan harga (gross) saat add-to-cart jika kolom price belum diset di cart_items
-    $variantPrice = optional(\App\Models\ProductVariant::find($variantId))->price;
-    $productPrice = optional(\App\Models\Product::find($productId))->price;
-    $grossPrice   = (float) ($variantPrice ?? $productPrice ?? 0);
-
-    if ($item) {
-        $item->increment('qty', $qty);
-        // opsional: jika price kosong di item, set sekarang
-        if (is_null($item->price)) {
-            $item->price = $grossPrice;
-            $item->save();
+            return redirect()->route('login.register');
         }
-    } else {
-        $item = $cart->items()->create([
-            'product_id'         => $productId,
-            'product_variant_id' => $variantId,
-            'qty'                => $qty,
-            'price'              => $grossPrice,       // simpan gross sekarang
-            // 'discount'         => 0,                // isi jika ada
-            // 'line_total'       => ... (boleh dihitung di DB trigger)
+
+        // --- 1. Validation ---
+        $validator = Validator::make($request->all(), [
+            'items' => ['required', 'array'],
+            'items.*.item_id' => ['required', 'integer', 'exists:cart_items,id'],
+            'items.*.quantity' => ['required', 'integer', 'min:1', 'max:999'],
+        ], [
+            'items.required' => 'Daftar item wajib diisi.',
+            'items.array' => 'Daftar item harus berupa array.',
+            'items.*.item_id.required' => 'ID item wajib diisi.',
+            'items.*.item_id.exists' => 'Item ID :input tidak ditemukan.',
+            'items.*.quantity.required' => 'Kuantitas wajib diisi.',
+            'items.*.quantity.min' => 'Kuantitas minimal 1.',
+            'items.*.quantity.max' => 'Kuantitas maksimal 999.',
         ]);
-    }
 
-    // Hitung subtotal cart: Σ qty × (price - discount)
-    $cart->load('items.product', 'items.variant');
-    $subtotal = $cart->items->sum(function($ci){
-        $gross = (float)($ci->price
-                ?? optional($ci->variant)->price
-                ?? optional($ci->product)->price
-                ?? 0);
-        $disc  = (float)($ci->discount ?? $ci->discount_amount ?? 0);
-        $net   = max(0, $gross - $disc);
-        $qty   = (int)($ci->qty ?? 0);
-        return $qty * $net;
-    });
-
-    $itemsCount = (int) $cart->items->sum('qty');
-
-    if ($request->wantsJson() || $request->ajax()) {
-        return response()->json([
-            'message'            => 'Item ditambahkan ke keranjang.',
-            'cart_items_count'   => $itemsCount,
-            'cart_subtotal'      => $subtotal,
-            'added_item_id'      => $item->id,
-        ]);
-    }
-
-    return back()->with('success', 'Item ditambahkan ke keranjang.');
-    }
-
-
-    /* ====================== Helpers ====================== */
-
-    protected function resolveCart(Request $request): Cart
-    {
-        $guard = Auth::guard('customer');
-        if ($guard->check()) {
-            return Cart::firstOrCreate(['customer_id' => (int)$guard->id()]);
+        if ($validator->fails()) {
+            return $request->expectsJson()
+                ? response()->json(['success' => false, 'errors' => $validator->errors()], 422)
+                : back()->withErrors($validator);
         }
 
-        // fallback by session
-        $sessionId = $request->session()->get('cart_session_id');
-        if (!$sessionId) {
-            $sessionId = (string) \Str::uuid();
-            $request->session()->put('cart_session_id', $sessionId);
-        }
+        $submittedItems = $request->input('items');
+        $customer = Auth::guard('customer')->user();
 
-        return Cart::firstOrCreate(['session_id' => $sessionId]);
-    }
+        try {
+            $responsePayload = DB::transaction(function () use ($customer, $submittedItems) {
+                $cart = $customer->cart;
 
-    protected function assertOwner(Cart $cart): void
-    {
-        $authId = Auth::guard('customer')->id();
-        if ($authId && (int)$cart->customer_id === (int)$authId) {
-            return;
-        }
-        // Jika guest by session, opsional: cocokkan session_id juga
-        // Untuk singkatnya, izinkan saja kalau bukan milik customer lain
-        if ($cart->customer_id) {
-            abort(403);
-        }
-    }
+                if (! $cart) {
+                    throw new \Exception('Keranjang tidak ditemukan.');
+                }
 
-    /** Hitung subtotal & total item */
-    protected function computeCart(Cart $cart): array
-    {
-        $subtotal = 0;
-        $count    = 0;
+                $updatedLines = [];
+                $cartItemIds = collect($submittedItems)->pluck('item_id');
 
-        foreach ($cart->items as $it) {
-            $price = $this->priceOf($it);
-            $subtotal += $price * (int)$it->quantity;
-            $count    += (int)$it->quantity;
-        }
+                // Load items to update, ensuring they belong to this cart and locking them
+                $itemsToUpdate = $cart->items()
+                    ->with(['product', 'variant', 'variant.stocks'])
+                    ->whereIn('id', $cartItemIds)
+                    ->lockForUpdate()
+                    ->get()
+                    ->keyBy('id');
 
-        return [$subtotal, $count];
-    }
+                if ($itemsToUpdate->count() !== count($submittedItems)) {
+                    // This handles cases where one item ID exists but belongs to another cart,
+                    // or if the item was deleted between FE submission and now.
+                    throw new \Exception('Satu atau lebih item keranjang tidak valid atau tidak ditemukan dalam keranjang Anda.');
+                }
 
-    /** Ambil harga item, prioritas variant => product */
-    protected function priceOf(CartItem $item): float|int
-    {
-        if ($item->relationLoaded('variant') && $item->variant) {
-            return (float) ($item->variant->price ?? 0);
+                // --- 2. Process and Update Each Item ---
+                foreach ($submittedItems as $submittedItem) {
+                    $itemId = $submittedItem['item_id'];
+                    $newQty = (int) $submittedItem['quantity'];
+
+                    $item = $itemsToUpdate->get($itemId);
+
+                    // --- Stock Check Logic (Reused from update method) ---
+                    $totalStock = null;
+                    if ($item->variant) {
+                        try {
+                            $totalStock = (int) $item->variant->stocks()->sum('qty');
+                        } catch (\Throwable $e) {
+                            // ignore if stock relation/method fails
+                        }
+                        // Fallback check for common stock fields on variant
+                        foreach ([
+                            $item->variant->total_stocks ?? null,
+                            $item->variant->stock_qty ?? null,
+                            $item->variant->stock_quantity ?? null,
+                            $item->variant->qty ?? null,
+                        ] as $c) {
+                            if (is_numeric($c)) {
+                                $totalStock = (int) $c;
+                                break;
+                            }
+                        }
+                    } elseif ($item->product) {
+                        // Fallback check for common stock fields on product
+                        foreach ([
+                            $item->product->stock_qty ?? null,
+                            $item->product->stock_quantity ?? null,
+                            $item->product->inventory ?? null,
+                            $item->product->qty ?? null,
+                        ] as $c) {
+                            if (is_numeric($c)) {
+                                $totalStock = (int) $c;
+                                break;
+                            }
+                        }
+                    }
+
+                    if ($totalStock !== null && $newQty > $totalStock) {
+                        $productName = optional($item->product)->name ?? 'Produk';
+                        throw new \Exception("Stok item '{$productName}' tidak mencukupi ({$newQty} pcs). Tersedia: {$totalStock} pcs");
+                    }
+
+                    // --- Update Quantity ---
+                    $item->quantity = $newQty;
+                    $item->save();
+
+                    // --- Calculate Line Subtotal ---
+                    $gross = (float) ($item->price
+                                ?? optional($item->variant)->price
+                                ?? optional($item->product)->price
+                                ?? 0);
+                    $disc = (float) ($item->discount_amount ?? $item->discount ?? 0);
+                    $net = max(0, $gross - $disc);
+                    $lineSubtotal = $net * $newQty;
+
+                    $updatedLines[$itemId] = $lineSubtotal;
+                }
+
+                // --- 3. Recalculate Final Cart Totals ---
+                // Reload cart items to ensure calculation reflects all current quantities
+                $cart->load(['items.product', 'items.variant']);
+                $cartSubtotal = (float) $cart->items->sum(function ($ci) {
+                    $g = (float) ($ci->price
+                            ?? optional($ci->variant)->price
+                            ?? optional($ci->product)->price
+                            ?? 0);
+                    $d = (float) ($ci->discount_amount ?? $ci->discount ?? 0);
+                    $n = max(0, $g - $d);
+                    $q = (int) ($ci->quantity ?? 0);
+
+                    return $n * $q;
+                });
+                $itemsCount = (int) $cart->items->sum('quantity');
+
+                return [
+                    'lines' => $updatedLines, // Subtotals per item
+                    'cart_subtotal' => $cartSubtotal, // Total cart subtotal
+                    'cart_items_count' => $itemsCount, // Total quantity of all items
+                ];
+            });
+
+            // --- 4. Return Success JSON ---
+            if ($request->expectsJson()) {
+                return response()->json(array_merge([
+                    'success' => true,
+                    'message' => 'Keranjang berhasil disinkronkan',
+                ], $responsePayload));
+            }
+
+            return back()->with('success', 'Keranjang berhasil disinkronkan');
+
+        } catch (\Exception $e) {
+            // --- 5. Handle Exceptions ---
+            Log::error('[CartController] Bulk sync error: '.$e->getMessage());
+
+            if ($request->expectsJson()) {
+                // Return 422 if stock issue, otherwise 400
+                $code = str_contains(strtolower($e->getMessage()), 'stok') ? 422 : 400;
+
+                return response()->json(['success' => false, 'message' => $e->getMessage()], $code);
+            }
+
+            return back()->with('error', $e->getMessage());
         }
-        if ($item->relationLoaded('product') && $item->product) {
-            return (float) ($item->product->price ?? 0);
-        }
-        // Fallback kalau field price disimpan di item
-        return (float) ($item->price ?? 0);
     }
 }

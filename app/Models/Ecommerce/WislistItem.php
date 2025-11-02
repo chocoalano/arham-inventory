@@ -17,7 +17,7 @@ class WislistItem extends Model
      *
      * @var string
      */
-    protected $table = 'wislist_items'; // Mengikuti nama tabel di migrasi (wislist_items)
+    protected $table = 'wishlist_items'; // Mengikuti nama tabel di migrasi (wislist_items)
 
     /**
      * Atribut yang dapat diisi secara massal (mass assignable).

@@ -47,4 +47,75 @@ class Cart extends Model
     {
         return $this->hasMany(CartItem::class);
     }
+
+    /**
+     * Get total items quantity in cart
+     */
+    public function getTotalQuantityAttribute(): int
+    {
+        return $this->items->sum('quantity');
+    }
+
+    /**
+     * Calculate cart subtotal
+     */
+    public function getSubtotalAttribute(): float
+    {
+        return $this->items->reduce(function ($carry, $item) {
+            $price = $item->variant?->price ?? $item->product?->price ?? 0;
+            return $carry + ($price * $item->quantity);
+        }, 0);
+    }
+
+    /**
+     * Add item to cart or update quantity if exists
+     */
+    public function addItem(int $productId, int $variantId, int $quantity = 1): CartItem
+    {
+        $item = $this->items()
+            ->where('product_id', $productId)
+            ->where('product_variant_id', $variantId)
+            ->first();
+
+        if ($item) {
+            $item->increment('quantity', $quantity);
+            return $item->fresh();
+        }
+
+        return $this->items()->create([
+            'product_id' => $productId,
+            'product_variant_id' => $variantId,
+            'quantity' => $quantity,
+        ]);
+    }
+
+    /**
+     * Remove item from cart
+     */
+    public function removeItem(int $itemId): bool
+    {
+        return $this->items()->where('id', $itemId)->delete();
+    }
+
+    /**
+     * Update item quantity
+     */
+    public function updateItemQuantity(int $itemId, int $quantity): bool
+    {
+        if ($quantity <= 0) {
+            return $this->removeItem($itemId);
+        }
+
+        return $this->items()
+            ->where('id', $itemId)
+            ->update(['quantity' => $quantity]);
+    }
+
+    /**
+     * Clear all items from cart
+     */
+    public function clearItems(): bool
+    {
+        return $this->items()->delete();
+    }
 }

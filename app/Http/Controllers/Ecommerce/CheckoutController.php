@@ -22,10 +22,11 @@ class CheckoutController extends Controller
         }
 
         // SUBTOTAL = Σ line_total (prioritas: kolom DB jika ada, fallback hitung manual)
-        $subtotal = $cart->items->sum(fn ($it) => $this->lineTotal($it));
+        $subtotal    = $cart->items->sum(fn ($it) => $this->lineTotal($it));
         $shippingFee = 0;
         $grandTotal  = $subtotal + $shippingFee;
 
+        // TIDAK ADA variabel Midtrans yang diteruskan ke view
         return view('ecommerce.pages.auth.checkout', [
             'cart'        => $cart,
             'subtotal'    => $subtotal,
@@ -34,7 +35,7 @@ class CheckoutController extends Controller
         ]);
     }
 
-    /** POST /checkout */
+    /** POST /checkout (tanpa Midtrans) */
     public function store(Request $request)
     {
         $customer = Auth::guard('customer')->user();
@@ -42,48 +43,48 @@ class CheckoutController extends Controller
         $validated = $request->validate([
             // Billing
             'billing.first_name' => ['required','string','max:100'],
-            'billing.last_name'  => ['required','string','max:100'],
+            'billing.last_name'  => ['nullable','string','max:100'],
             'billing.email'      => ['required','email','max:150'],
             'billing.phone'      => ['required','string','max:30'],
             'billing.company'    => ['nullable','string','max:150'],
             'billing.address1'   => ['required','string','max:255'],
             'billing.address2'   => ['nullable','string','max:255'],
-            'billing.country'    => ['required','string','max:100'],
             'billing.city'       => ['required','string','max:100'],
             'billing.state'      => ['required','string','max:100'],
             'billing.postcode'   => ['required','string','max:20'],
 
             // Shipping
-            'ship_to_different'  => ['nullable','boolean'],
-            'shipping.first_name'=> ['required_if:ship_to_different,1','nullable','string','max:100'],
-            'shipping.last_name' => ['required_if:ship_to_different,1','nullable','string','max:100'],
-            'shipping.email'     => ['nullable','email','max:150'],
-            'shipping.phone'     => ['nullable','string','max:30'],
-            'shipping.company'   => ['nullable','string','max:150'],
-            'shipping.address1'  => ['required_if:ship_to_different,1','nullable','string','max:255'],
-            'shipping.address2'  => ['nullable','string','max:255'],
-            'shipping.country'   => ['required_if:ship_to_different,1','nullable','string','max:100'],
-            'shipping.city'      => ['required_if:ship_to_different,1','nullable','string','max:100'],
-            'shipping.state'     => ['required_if:ship_to_different,1','nullable','string','max:100'],
-            'shipping.postcode'  => ['required_if:ship_to_different,1','nullable','string','max:20'],
+            'ship_to_different'   => ['nullable','boolean'],
+            'shipping.first_name' => ['required_if:ship_to_different,1','nullable','string','max:100'],
+            'shipping.last_name'  => ['required_if:ship_to_different,1','nullable','string','max:100'],
+            'shipping.email'      => ['nullable','email','max:150'],
+            'shipping.phone'      => ['nullable','string','max:30'],
+            'shipping.company'    => ['nullable','string','max:150'],
+            'shipping.address1'   => ['required_if:ship_to_different,1','nullable','string','max:255'],
+            'shipping.address2'   => ['nullable','string','max:255'],
+            'shipping.city'       => ['required_if:ship_to_different,1','nullable','string','max:100'],
+            'shipping.state'      => ['required_if:ship_to_different,1','nullable','string','max:100'],
+            'shipping.postcode'   => ['required_if:ship_to_different,1','nullable','string','max:20'],
 
-            // Payment
-            'payment_method'     => ['required','in:check,bank,cash,paypal,payoneer'],
-            'accept_terms'       => ['accepted'],
+            // Payment (tanpa 'midtrans')
+            // Sesuaikan daftar ini dengan metode yang Anda gunakan di UI
+            'payment_method'      => ['required','in:bank_transfer,cod,bank,cash,check'],
+            'accept_terms'        => ['accepted'],
         ], [
             'accept_terms.accepted' => 'Anda harus menyetujui syarat & ketentuan.',
         ]);
 
-        // Simpan & kembalikan model Transaction dari closure (bukan redirect di dalamnya)
-        $trx = DB::transaction(function () use ($customer, $validated, $request) {
+        $paymentMethod = $validated['payment_method'];
+
+        // Simpan transaksi (tanpa proses Midtrans)
+        $trx = DB::transaction(function () use ($customer, $validated, $request, $paymentMethod) {
             $cart = $this->resolveCart($request, $customer, lock: true);
 
             if (!$cart || $cart->items->isEmpty()) {
-                // lempar exception ringan agar rollback dan ditangani di luar
                 throw new \RuntimeException('Keranjang Anda kosong.');
             }
 
-            // Totals berbasis line_total DB atau hitung manual
+            // Hitung totals
             $subtotal    = $cart->items->sum(fn ($it) => $this->lineTotal($it));
             $shippingFee = 0;
             $grandTotal  = $subtotal + $shippingFee;
@@ -105,23 +106,23 @@ class CheckoutController extends Controller
                 'customer_full_address' => $addressStr,
                 'item_count'            => $itemCount,
                 'grand_total'           => $grandTotal,
-                'status'                => Transaction::STATUS_DRAFT,
-                'remarks'               => sprintf('payment:%s; shipping_fee:%s', $validated['payment_method'], $shippingFee),
+                'status'                => Transaction::STATUS_DRAFT, // atau STATUS_PENDING_PAYMENT jika tersedia
+                'remarks'               => sprintf('payment:%s; shipping_fee:%s', $paymentMethod, $shippingFee),
+                'created_by'            => auth('customer')->id(),
             ]);
 
             // Detail per item
             foreach ($cart->items as $ci) {
                 [$unitGross, $unitDiscount, $unitNet] = $this->netUnitPrice($ci);
-                $qty = (int) ($ci->qty ?? 0);
-                $lineTotal = $this->lineTotal($ci, $unitGross, $unitDiscount); // konsisten
+                $qty       = (int) ($ci->qty ?? 0);
+                $lineTotal = $this->lineTotal($ci, $unitGross, $unitDiscount);
 
-                // Simpan 'price' sebagai HARGA NET PER UNIT (sesuai total)
                 $trx->details()->create([
                     'product_id'         => $ci->product_id,
                     'product_variant_id' => $ci->product_variant_id,
                     'qty'                => $qty,
-                    'price'              => $unitNet,     // unit NET = price - discount
-                    'total'              => $lineTotal,   // qty × (price - discount)
+                    'price'              => $unitNet,    // harga net per unit
+                    'total'              => $lineTotal,  // qty × net
                 ]);
             }
 
@@ -131,21 +132,27 @@ class CheckoutController extends Controller
             return $trx;
         });
 
-        // Sukses
-        $redirectUrl = route('orders.show', $trx->id);
+        // Alur selesai tanpa gateway: arahkan ke halaman/route yang Anda miliki.
+        // Di sini, fallback ke cart.index dengan flash message sukses.
+        // (Silakan ganti ke route('orders.show', $trx->id) atau 'checkout.thankyou' jika ada.)
+        $successMsg = match ($paymentMethod) {
+            'bank_transfer', 'bank', 'check' => "Pesanan #{$trx->id} berhasil dibuat. Silakan selesaikan pembayaran via transfer bank.",
+            'cod'                            => "Pesanan #{$trx->id} berhasil dibuat. Pembayaran akan dilakukan di tempat (COD).",
+            'cash'                           => "Pesanan #{$trx->id} berhasil dibuat. Silakan siapkan pembayaran tunai.",
+            default                          => "Pesanan #{$trx->id} berhasil dibuat.",
+        };
 
-        if ($request->wantsJson() || $request->ajax()) {
-            return response()->json([
-                'message'        => 'Order created',
-                'transaction_id' => $trx->id,
-                'redirect'       => $redirectUrl,
+        return redirect()
+            ->route('cart.index')
+            ->with([
+                'status'          => $successMsg,
+                'checkout_tx_id'  => $trx->id,
+                'payment_method'  => $paymentMethod,
             ]);
-        }
-
-        return redirect($redirectUrl)->with('success', 'Pesanan berhasil dibuat. Terima kasih!');
     }
 
-    /** Harga varian → produk → 0 (GROSS / sebelum diskon) */
+    // ===================== Helper =====================
+
     protected function unitPrice($cartItem): float
     {
         $variantPrice = optional($cartItem->variant)->price
@@ -158,12 +165,6 @@ class CheckoutController extends Controller
         return (float) ($variantPrice ?? $productPrice ?? 0);
     }
 
-    /**
-     * Hitung NET unit price (price - discount) dan kembalikan tuple:
-     * [gross, discount, net]
-     * - Ambil dari kolom item jika tersedia: $item->price, $item->discount / discount_amount
-     * - Fallback ke unitPrice() jika kolom price null.
-     */
     protected function netUnitPrice($item): array
     {
         $gross = (float) ($item->price ?? $this->unitPrice($item));
@@ -172,13 +173,8 @@ class CheckoutController extends Controller
         return [$gross, $disc, $net];
     }
 
-    /**
-     * Dapatkan line_total: prioritas pakai kolom DB 'line_total' jika ada & valid,
-     * jika tidak, hitung: qty × (price - discount).
-     */
     protected function lineTotal($item, ?float $gross = null, ?float $disc = null): float
     {
-        // Jika sudah ada kolom line_total di DB (mis. via trigger / sebelum checkout)
         if (isset($item->line_total) && is_numeric($item->line_total)) {
             return (float) $item->line_total;
         }
@@ -193,7 +189,6 @@ class CheckoutController extends Controller
         return (float) ($qty * $net);
     }
 
-    /** Format alamat untuk header transaksi */
     protected function formatAddress(array $addr): string
     {
         $parts = [
@@ -207,7 +202,6 @@ class CheckoutController extends Controller
         return implode(', ', array_filter($parts));
     }
 
-    // ====== resolveCart & mergeCarts (tanpa perubahan logika) ======
     protected function resolveCart(Request $request, $customer, bool $lock = false): Cart
     {
         return DB::transaction(function () use ($request, $customer, $lock) {
@@ -274,9 +268,8 @@ class CheckoutController extends Controller
                     'product_id'         => $item->product_id,
                     'product_variant_id' => $item->product_variant_id,
                     'qty'                => (int)$item->qty,
-                    'price'              => $item->price ?? null,     // ikutkan jika kolom ada
-                    'discount'           => $item->discount ?? null,  // ikutkan jika kolom ada
-                    // 'line_total'       => (opsional) bisa diisi trigger DB
+                    'price'              => $item->price ?? null,
+                    'discount'           => $item->discount ?? null,
                 ]);
             }
         }
