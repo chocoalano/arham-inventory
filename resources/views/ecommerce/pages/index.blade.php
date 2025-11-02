@@ -5,46 +5,55 @@
 @endpush
 
 @section('content')
-    {{-- ====== LETAKKAN TEPAT SETELAH @section('content') ====== --}}
     @php
         \Carbon\Carbon::setLocale('id');
 
-        // Normalisasi semua dataset jadi Collection (aman jika null / tidak dikirim controller)
-        $heroSlides = collect($heroSlides ?? []);
-        $features = collect($features ?? []);
+        // ===================== NORMALISASI DATA =====================
+        // Hero slides -> pakai object uniform
+        $heroSlides = collect($heroSlides ?? [])->map(function ($s) {
+            return (object) [
+                'bg_class'    => data_get($s, 'bg_class', 'slider-bg-1'),
+                'subtitle'    => data_get($s, 'subtitle'),
+                'title'       => data_get($s, 'title', ''),
+                'button_text' => data_get($s, 'button_text'),
+                'button_url'  => data_get($s, 'button_url', '#'),
+            ];
+        })->values();
 
-        // Normalisasi featuredCategories → objek seragam (bisa dari array statis / model Eloquent)
+        // Features -> object uniform
+        $features = collect($features ?? [])->map(function ($f) {
+            return (object) [
+                'icon' => data_get($f, 'icon', 'lnr lnr-star'),
+                'title'=> data_get($f, 'title', ''),
+                'desc' => data_get($f, 'desc'),
+            ];
+        })->values();
+
+        // Featured categories -> object uniform (image_url boleh path storage atau URL)
         $featuredCategories = collect($featuredCategories ?? [])
             ->map(function ($c) {
-                $name = data_get($c, 'name');
-                $slug = data_get($c, 'slug');
-                $url = data_get($c, 'url'); // opsional, kalau ada field custom URL
-                $img = data_get($c, 'image_url'); // simpan path/url gambar pada field ini (storage/.. atau url)
-
-                // Jika $img bukan URL absolut, anggap itu path storage
+                $img = data_get($c, 'image_url');
                 if ($img && !filter_var($img, FILTER_VALIDATE_URL)) {
                     $img = asset('storage/' . ltrim($img, '/'));
                 }
-
                 return (object) [
-                    'name' => $name,
-                    'slug' => $slug,
-                    'url' => $url,
-                    'banner_image' => $img ?: asset('ecommerce/images/category-banner/home1-banner1.webp'),
+                    'name'           => data_get($c, 'name', 'Kategori'),
+                    'slug'           => data_get($c, 'slug', ''),
+                    'url'            => data_get($c, 'url'),
+                    'banner_image'   => $img ?: asset('ecommerce/images/category-banner/home1-banner1.webp'),
                     'banner_image_w' => data_get($c, 'banner_image_w', 540),
                     'banner_image_h' => data_get($c, 'banner_image_h', 560),
                 ];
-            })
-            ->values();
+            })->values();
 
-        $newProducts = collect($newProducts ?? []);
-        $deals = collect($deals ?? []);
-        $popularProducts = collect($popularProducts ?? []);
-        $topSellingProducts = collect($topSellingProducts ?? []);
-        $blogPosts = collect($blogPosts ?? []);
-        $instagramImages = collect($instagramImages ?? []);
+        // Koleksi produk & blog (biarkan apa adanya, tapi aksesnya pakai data_get saat dipakai)
+        $newProducts       = collect($newProducts ?? []);
+        $deals             = collect($deals ?? []);
+        $popularProducts   = collect($popularProducts ?? []);
+        $topSellingProducts= collect($topSellingProducts ?? []);
+        $blogPosts         = collect($blogPosts ?? []);
+        $instagramImages   = collect($instagramImages ?? []);
     @endphp
-
 
     <!-- ====================== HERO ====================== -->
     <div class="hero-area pt-15 mb-80">
@@ -53,40 +62,39 @@
                 <div class="col-lg-12">
                     <div class="slider-container">
                         <div class="hero-slider-one">
-                            @forelse($heroSlides ?? [] as $slide)
-                                <div class="hero-slider-item {{ $slide->bg_class ?? 'slider-bg-1' }}">
-                                    <div
-                                        class="slider-content d-flex flex-column justify-content-center align-items-start h-100">
-                                        @if($slide->subtitle)
-                                        <p>{{ $slide->subtitle }}</p>@endif
+                            @forelse($heroSlides as $slide)
+                                <div class="hero-slider-item {{ $slide->bg_class }}">
+                                    <div class="slider-content d-flex flex-column justify-content-center align-items-start h-100">
+                                        @if(!empty($slide->subtitle))
+                                            <p>{{ $slide->subtitle }}</p>
+                                        @endif
                                         <h1>{!! $slide->title !!}</h1>
-                                        @if($slide->button_text)
-                                            <a href="{{ $slide->button_url ?? '#' }}" class="pataku-btn slider-btn-1">
+                                        @if(!empty($slide->button_text))
+                                            <a href="{{ $slide->button_url }}" class="pataku-btn slider-btn-1">
                                                 {{ $slide->button_text }}
                                             </a>
                                         @endif
                                     </div>
                                 </div>
                             @empty
-                                {{-- Fallback kosong agar tidak error jika belum ada data --}}
+                                {{-- kosong --}}
                             @endforelse
                         </div>
                     </div>
                 </div>
             </div>
 
-            {{-- Features (keunggulan singkat) --}}
+            {{-- Features --}}
             <div class="row">
                 <div class="col-lg-12 pt-40 pb-40">
                     <div class="feature-area">
-                        @forelse($features ?? [] as $feature)
+                        @forelse($features as $feature)
                             <div class="single-feature mb-md-20 mb-sm-20 mb-xxs-20">
-                                <span class="icon"><i class="{{ $feature->icon ?? 'lnr lnr-star' }}"></i></span>
-                                <p>{{ $feature->title }}
-                                    @if($feature->desc) <span>{{ $feature->desc }}</span> @endif
-                                </p>
+                                <span class="icon"><i class="{{ $feature->icon }}"></i></span>
+                                <p>{{ $feature->title }} @if(!empty($feature->desc)) <span>{{ $feature->desc }}</span> @endif</p>
                             </div>
                         @empty
+                            {{-- kosong --}}
                         @endforelse
                     </div>
                 </div>
@@ -106,22 +114,19 @@
                 </div>
             </div>
 
-            @php
-                // ekspektasi data: $featuredCategories berisi koleksi model Category dengan field:
-                // name, slug, banner_image (URL), banner_image_w, banner_image_h, url (opsional)
-                $fc = ($featuredCategories ?? collect())->values();
-            @endphp
+            @php $fc = $featuredCategories; @endphp
 
             @if($fc->isNotEmpty())
                 <div class="row">
-                    {{-- Kartu 1 (besar kiri) --}}
+                    {{-- Besar kiri --}}
                     @if($fc->get(0))
                         @php $c = $fc->get(0); @endphp
                         <div class="col-lg-6 col-md-6 mb-sm-30">
                             <div class="banner">
                                 <a href="{{ $c->url ?? url('/products?category=' . $c->slug) }}">
-                                    <img width="{{ $c->banner_image_w ?? 540 }}" height="{{ $c->banner_image_h ?? 560 }}"
-                                        src="{{ asset($c->banner_image) }}" class="img-fluid" alt="{{ $c->name }}">
+                                    {{-- JANGAN dibungkus asset() lagi karena sudah absolut --}}
+                                    <img width="{{ $c->banner_image_w }}" height="{{ $c->banner_image_h }}"
+                                         src="{{ $c->banner_image }}" class="img-fluid" alt="{{ $c->name }}">
                                 </a>
                                 <span class="banner-category-title">
                                     <a href="{{ $c->url ?? url('/products?category=' . $c->slug) }}">{{ $c->name }}</a>
@@ -130,7 +135,7 @@
                         </div>
                     @endif
 
-                    {{-- Kartu 2 (besar kanan atas) + 3/4 (kecil kanan bawah) --}}
+                    {{-- Kanan (besar atas + 2 kecil bawah) --}}
                     <div class="col-lg-6 col-md-6">
                         <div class="row">
                             @if($fc->get(1))
@@ -138,8 +143,8 @@
                                 <div class="col-lg-12 col-md-12 mb-30">
                                     <div class="banner">
                                         <a href="{{ $c->url ?? url('/products?category=' . $c->slug) }}">
-                                            <img width="{{ $c->banner_image_w ?? 550 }}" height="{{ $c->banner_image_h ?? 270 }}"
-                                                src="{{ $c->banner_image }}" class="img-fluid" alt="{{ $c->name }}">
+                                            <img width="{{ $c->banner_image_w }}" height="{{ $c->banner_image_h }}"
+                                                 src="{{ $c->banner_image }}" class="img-fluid" alt="{{ $c->name }}">
                                         </a>
                                         <span class="banner-category-title">
                                             <a href="{{ $c->url ?? url('/products?category=' . $c->slug) }}">{{ $c->name }}</a>
@@ -153,8 +158,8 @@
                                 <div class="col-lg-6 col-md-6 col-sm-6 col-6">
                                     <div class="banner">
                                         <a href="{{ $c->url ?? url('/products?category=' . $c->slug) }}">
-                                            <img width="{{ $c->banner_image_w ?? 265 }}" height="{{ $c->banner_image_h ?? 270 }}"
-                                                src="{{ $c->banner_image }}" class="img-fluid" alt="{{ $c->name }}">
+                                            <img width="{{ $c->banner_image_w }}" height="{{ $c->banner_image_h }}"
+                                                 src="{{ $c->banner_image }}" class="img-fluid" alt="{{ $c->name }}">
                                         </a>
                                         <span class="banner-category-title">
                                             <a href="{{ $c->url ?? url('/products?category=' . $c->slug) }}">{{ $c->name }}</a>
@@ -169,7 +174,7 @@
         </div>
     </div>
 
-    <!-- ====================== KOLEKSI TERBARU (Produk baru) ====================== -->
+    <!-- ====================== KOLEKSI TERBARU ====================== -->
     <div class="double-row-product-slider mb-80">
         <div class="container">
             <div class="row">
@@ -181,32 +186,30 @@
                 </div>
             </div>
 
-            @php
-                $new = ($newProducts ?? collect());
-            @endphp
+            @php $new = $newProducts; @endphp
 
             <div class="row">
                 <div class="col-lg-12">
                     <div class="ptk-slider double-row-slider-container" data-row="2">
                         @forelse($new as $product)
                             @php
-                                // ambil harga (final -> price -> regular_price)
-                                $price = $product->variants->first()->price ?? 0;
-                                $compare = $product->variants->first()->price ?? 0;
-                                $img = data_get($product, 'imagesPrimary')['image_path'];
-                                $badges = collect(data_get($product, 'badges', []));
-                                $url = data_get($product, 'url') ?? route('ecommerce.products.show', $product->sku);
+                                $price   = data_get($product, 'variants.0.price', data_get($product, 'price', 0));
+                                $compare = data_get($product, 'variants.0.compare_price', data_get($product, 'regular_price'));
+                                $imgPath = data_get($product, 'imagesPrimary.image_path'); // <- SAFE
+                                $imgUrl  = $imgPath ? asset('storage/' . $imgPath) : asset('ecommerce/images/placeholder/300x360.png');
+                                $badges  = (array) data_get($product, 'badges', []);
+                                $url     = data_get($product, 'url') ?? (data_get($product, 'sku') ? route('ecommerce.products.show', data_get($product, 'sku')) : '#');
                             @endphp
                             <div class="col">
                                 @livewire('ecommerce.components.product-card', [
-                                    'product' => $product,
-                                    'url' => $url,
-                                    'img' => asset('storage/'.$img) ?? asset('ecommerce/images/placeholder/300x360.png'),
-                                    'price' => $price,
-                                    'compare' => $compare,
-                                    'badges' => $badges,
-                                    'isWishlisted' => false,
-                                    'qty' => 1,
+                                    'product'       => $product,
+                                    'url'           => $url,
+                                    'img'           => $imgUrl,
+                                    'price'         => $price,
+                                    'compare'       => $compare,
+                                    'badges'        => $badges,
+                                    'isWishlisted'  => false,
+                                    'qty'           => 1,
                                 ])
                             </div>
                         @empty
@@ -220,18 +223,22 @@
 
     <!-- ====================== FULLWIDTH BANNER ====================== -->
     @forelse(($fullwidthBanners ?? []) as $banner)
-        <div
-            class="fullwidth-banner-area {{ $banner->bg_class ?? 'fullwidth-banner-bg fullwidth-banner-bg-1' }} pt-120 pb-120 pt-xs-80 pb-xs-80 mb-80">
+        @php
+            $bgClass = data_get($banner, 'bg_class', 'fullwidth-banner-bg fullwidth-banner-bg-1');
+            $title   = data_get($banner, 'title', '');
+            $desc    = data_get($banner, 'description');
+            $btnText = data_get($banner, 'button_text');
+            $btnUrl  = data_get($banner, 'button_url', '#');
+        @endphp
+        <div class="fullwidth-banner-area {{ $bgClass }} pt-120 pb-120 pt-xs-80 pb-xs-80 mb-80">
             <div class="container">
                 <div class="row">
                     <div class="col-xl-6 col-lg-7 col-md-9 col-12">
                         <div class="fullwidth-banner-content">
-                            <p class="fullwidth-banner-title">{{ $banner->title }}</p>
-                            @if($banner->description)
-                            <p>{{ $banner->description }}</p>@endif
-                            @if($banner->button_text)
-                                <a href="{{ $banner->button_url ?? '#' }}">{{ $banner->button_text }} <i
-                                        class="fa fa-angle-right"></i></a>
+                            <p class="fullwidth-banner-title">{{ $title }}</p>
+                            @if(!empty($desc)) <p>{{ $desc }}</p> @endif
+                            @if(!empty($btnText))
+                                <a href="{{ $btnUrl }}">{{ $btnText }} <i class="fa fa-angle-right"></i></a>
                             @endif
                         </div>
                     </div>
@@ -254,33 +261,34 @@
                     <div class="row">
                         <div class="col-lg-12">
                             <div class="ptk-slider deal-slider-container">
-                                @forelse(($deals ?? []) as $deal)
+                                @forelse($deals as $deal)
                                     @php
-                                        $price = $deal->variants->first()->price ?? 0;
-                                        $compare = $deal->variants->first()->price ?? 0;
-                                        $img = asset('storage/'.$deal->imagesPrimary->image_path) ?? asset('ecommerce/images/placeholder/300x360.png');
-                                        $badges = collect(data_get($deal, 'badges', []));
-                                        $url = route('ecommerce.products.show', $deal->sku);
-                                        $countdown = optional(data_get($deal, 'deal_ends_at')) instanceof \Carbon\Carbon
-                                            ? data_get($deal, 'deal_ends_at')->format('Y/m/d')
-                                            : (data_get($deal, 'deal_ends_at') ? \Carbon\Carbon::parse(data_get($deal, 'deal_ends_at'))->format('Y/m/d') : null);
+                                        $price    = data_get($deal, 'variants.0.price', data_get($deal, 'price', 0));
+                                        $compare  = data_get($deal, 'variants.0.compare_price', data_get($deal, 'regular_price'));
+                                        $imgPath  = data_get($deal, 'imagesPrimary.image_path');
+                                        $imgUrl   = $imgPath ? asset('storage/' . $imgPath) : asset('ecommerce/images/placeholder/300x360.png');
+                                        $badges   = (array) data_get($deal, 'badges', []);
+                                        $url      = route('ecommerce.products.show', data_get($deal, 'sku'));
+                                        $endsAt   = data_get($deal, 'deal_ends_at');
+                                        $countdown= $endsAt ? \Carbon\Carbon::parse($endsAt)->format('Y/m/d') : null;
                                     @endphp
                                     <div class="col">
                                         @if($countdown)
                                             <div class="product-countdown" data-countdown="{{ $countdown }}"></div>
                                         @endif
                                         @livewire('ecommerce.components.product-card', [
-                                            'product' => $deal,
-                                            'url' => $url,
-                                            'img' => $img,
-                                            'price' => $price,
-                                            'compare' => $compare,
-                                            'badges' => $badges,
-                                            'isWishlisted' => false,
-                                            'qty' => 1,
+                                            'product'       => $deal,
+                                            'url'           => $url,
+                                            'img'           => $imgUrl,
+                                            'price'         => $price,
+                                            'compare'       => $compare,
+                                            'badges'        => $badges,
+                                            'isWishlisted'  => false,
+                                            'qty'           => 1,
                                         ])
                                     </div>
                                 @empty
+                                    {{-- kosong --}}
                                 @endforelse
                             </div>
                         </div>
@@ -296,26 +304,29 @@
                     <div class="row">
                         <div class="col-lg-12">
                             <div class="ptk-slider popular-product-slider" data-row="3">
-                                @forelse(($popularProducts ?? []) as $product)
+                                @forelse($popularProducts as $product)
                                     @php
-                                        $price = $product->variants->first()->price ?? 0;
-                                        $compare = $product->variants->first()->price ?? 0;
-                                        $img = asset('storage/'.$product->imagesPrimary->image_path) ?? asset('ecommerce/images/placeholder/300x360.png');
-                                        $url = data_get($product, 'url') ?? route('ecommerce.products.show', $product->sku);
+                                        $price   = data_get($product, 'variants.0.price', data_get($product, 'price', 0));
+                                        $compare = data_get($product, 'variants.0.compare_price', data_get($product, 'regular_price'));
+                                        $imgPath = data_get($product, 'imagesPrimary.image_path');
+                                        $imgUrl  = $imgPath ? asset('storage/' . $imgPath) : asset('ecommerce/images/placeholder/300x360.png');
+                                        $badges  = (array) data_get($product, 'badges', []);
+                                        $url     = data_get($product, 'url') ?? (data_get($product, 'sku') ? route('ecommerce.products.show', data_get($product, 'sku')) : '#');
                                     @endphp
                                     <div class="col">
                                         @livewire('ecommerce.components.product-card', [
-                                            'product' => $product,
-                                            'url' => $url,
-                                            'img' => $img,
-                                            'price' => $price,
-                                            'compare' => $compare,
-                                            'badges' => collect(data_get($product, 'badges', [])),
-                                            'isWishlisted' => false,
-                                            'qty' => 1,
+                                            'product'       => $product,
+                                            'url'           => $url,
+                                            'img'           => $imgUrl,
+                                            'price'         => $price,
+                                            'compare'       => $compare,
+                                            'badges'        => $badges,
+                                            'isWishlisted'  => false,
+                                            'qty'           => 1,
                                         ])
                                     </div>
                                 @empty
+                                    {{-- kosong --}}
                                 @endforelse
                             </div>
                         </div>
@@ -337,31 +348,33 @@
                     </div>
                 </div>
             </div>
-            @php $tops = ($topSellingProducts ?? collect()); @endphp
+            @php $tops = $topSellingProducts; @endphp
             <div class="row">
                 <div class="col-lg-12">
                     <div class="ptk-slider top-selling-product-slider-container">
                         @forelse($tops as $product)
                             @php
-                                $price = $product->variants->first()->price ?? 0;
-                                $compare = $product->variants->first()->compare_price ?? 0;
-                                $img = asset('storage/'.$product->imagesPrimary->image_path) ?? asset('ecommerce/images/placeholder/300x360.png');
-                                $badges = collect($product->badges ?? []);
-                                $url = $product->url ?? route('ecommerce.products.show', $product->sku);
+                                $price   = data_get($product, 'variants.0.price', data_get($product, 'price', 0));
+                                $compare = data_get($product, 'variants.0.compare_price', data_get($product, 'regular_price'));
+                                $imgPath = data_get($product, 'imagesPrimary.image_path');
+                                $imgUrl  = $imgPath ? asset('storage/' . $imgPath) : asset('ecommerce/images/placeholder/300x360.png');
+                                $badges  = (array) data_get($product, 'badges', []);
+                                $url     = data_get($product, 'url') ?? (data_get($product, 'sku') ? route('ecommerce.products.show', data_get($product, 'sku')) : '#');
                             @endphp
                             <div class="col">
                                 @livewire('ecommerce.components.product-card', [
-                                    'product' => $product,
-                                    'url' => $url,
-                                    'img' => $img,
-                                    'price' => $price,
-                                    'compare' => $compare,
-                                    'badges' => $badges,
-                                    'isWishlisted' => false,
-                                    'qty' => 1,
+                                    'product'       => $product,
+                                    'url'           => $url,
+                                    'img'           => $imgUrl,
+                                    'price'         => $price,
+                                    'compare'       => $compare,
+                                    'badges'        => $badges,
+                                    'isWishlisted'  => false,
+                                    'qty'           => 1,
                                 ])
                             </div>
                         @empty
+                            {{-- kosong --}}
                         @endforelse
                     </div>
                 </div>
@@ -383,26 +396,28 @@
             <div class="row">
                 <div class="col-lg-12">
                     <div class="blog-post-slider-container ptk-slider">
-                        @forelse(($blogPosts ?? []) as $post)
+                        @forelse($blogPosts as $post)
                             @php
-                                $img = $post->main_image ?? optional($post->media->first())->url ?? asset('ecommerce/images/placeholder/800x517.png');
-                                $url = $post->url ?? url('/articles/' . $post->slug);
+                                $img = data_get($post, 'main_image')
+                                    ?: data_get($post, 'media.0.url')
+                                    ?: asset('ecommerce/images/placeholder/800x517.png');
+                                $url = data_get($post, 'url') ?? url('/articles/' . data_get($post, 'slug'));
                             @endphp
                             <div class="col">
                                 <div class="single-slider-blog-post">
                                     <div class="image">
                                         <a href="{{ $url }}">
-                                            <img width="800" height="517" src="{{ $img }}" class="img-fluid"
-                                                alt="{{ $post->title }}">
+                                            <img width="800" height="517" src="{{ $img }}" class="img-fluid" alt="{{ data_get($post, 'title', 'Artikel') }}">
                                         </a>
                                     </div>
                                     <div class="content">
-                                        <p class="blog-title"><a href="{{ $url }}">{{ $post->title }}</a></p>
+                                        <p class="blog-title"><a href="{{ $url }}">{{ data_get($post, 'title', 'Artikel') }}</a></p>
                                         <a href="{{ $url }}" class="readmore-btn">Baca Selengkapnya</a>
                                     </div>
                                 </div>
                             </div>
                         @empty
+                            {{-- kosong --}}
                         @endforelse
                     </div>
                 </div>
