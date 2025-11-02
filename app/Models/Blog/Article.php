@@ -91,7 +91,7 @@ class Article extends Model
             ArticleTag::class,
             'article_tag',
             'article_id',
-            'tag_id'
+            'article_tag_id'
         );
     }
 
