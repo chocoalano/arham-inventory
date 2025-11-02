@@ -23,7 +23,7 @@ class AuthenticateCustomer
         if (! Auth::guard($guard)->check()) {
 
             // Jika belum login, redirect ke halaman login customer
-            return redirect()->route('login.show'); // Ganti 'customer.login' dengan nama route login Anda
+            return redirect()->route('login.register'); // Ganti 'customer.login' dengan nama route login Anda
         }
 
         return $next($request);
