@@ -67,8 +67,7 @@ class HomeController extends Controller
             ->get();
 
         // Artikel terbaru
-        $blogPosts = Article::published()
-            ->latest('published_at')
+        $blogPosts = Article::latest('published_at')
             ->with(['media'])
             ->take(8)
             ->get()
