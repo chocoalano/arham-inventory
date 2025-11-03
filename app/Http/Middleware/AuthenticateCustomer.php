@@ -14,7 +14,7 @@ class AuthenticateCustomer
      *
      * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
      */
-    public function handle(Request $request, Closure $next, ...$guards): Response
+    public function handle(Request $request, Closure $next): Response
     {
         // Secara default, kita akan menggunakan guard 'customer'
         $guard = 'customer';
