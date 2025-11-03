@@ -10,6 +10,8 @@ use App\Http\Controllers\Ecommerce\TransactionController;
 use App\Http\Controllers\Ecommerce\WishlistController;
 use Illuminate\Support\Facades\Route;
 
+Route::get('/login', fn () => redirect()->route('login.register'))
+    ->name('login');
 Route::get('/', [HomeController::class, 'index'])
     ->name('ecommerce.index');
 Route::prefix('products')->name('ecommerce.products.')->group(function () {
