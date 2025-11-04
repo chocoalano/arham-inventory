@@ -9,6 +9,6 @@ Route::get('/cetak-resi/{id}', [InventoryController::class, 'cetak_resi'])
 Route::get('/cetak-invoice/{id}', [InventoryController::class, 'cetak_invoice'])
     ->name('inventory.cetak-invoice');
 
-
-// Memperbaiki path file. Menggunakan '/' sebagai pemisah, bukan './'
-require __DIR__ . '/ecommerce.php';
+Route::get('/', function () {
+    return redirect()->route('filament.app.auth.login');
+});
