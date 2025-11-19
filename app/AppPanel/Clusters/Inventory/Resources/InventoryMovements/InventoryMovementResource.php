@@ -101,12 +101,14 @@ class InventoryMovementResource extends Resource
                             ->options(function (Get $get) {
                                 $src = (int) ($get('source_warehouse_id') ?? 0);
 
-                                return Warehouse::query()
+                                $wh_target = Warehouse::query()
                                     ->when($src > 0, fn($q) => $q->where('id', '!=', $src))
                                     ->where('is_active', true)
                                     ->orderBy('name')
                                     ->pluck('name', 'id')
                                     ->all();
+                                    array_push($wh_target, 'Online Store');
+                                return $wh_target;
                             })
                             ->searchable()
                             ->preload()
