@@ -40,7 +40,11 @@ class ProductsTable
                 TextColumn::make('sku')->searchable(),
                 TextColumn::make('name')->searchable(),
                 TextColumn::make('model')->searchable(),
-                ImageColumn::make('images.image_path'),
+                ImageColumn::make('imagesPrimary.image_path')
+                    ->label('Gambar')
+                    ->circular()
+                    ->defaultImageUrl(url('/images/no-image.png'))
+                    ->disk('public'),
             ])
             ->filters([
                 // Status aktif / nonaktif
