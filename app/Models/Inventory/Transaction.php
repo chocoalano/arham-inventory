@@ -5,9 +5,9 @@ namespace App\Models\Inventory;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Str;
 use Spatie\Activitylog\LogOptions;
@@ -103,10 +103,9 @@ class Transaction extends Model
         // one-to-one via invoices.transaction_id (inverse would be in Invoice)
         return $this->hasOne(Invoice::class, 'transaction_id');
     }
-    public function inventoryMovement(): HasOne
+    public function inventoryMovements(): HasMany
     {
-        // one-to-one via invoices.transaction_id (inverse would be in Invoice)
-        return $this->hasOne(InventoryMovement::class, 'transaction_id');
+        return $this->hasMany(InventoryMovement::class, 'transaction_id');
     }
 
     /** Helper: apakah sudah posted? */

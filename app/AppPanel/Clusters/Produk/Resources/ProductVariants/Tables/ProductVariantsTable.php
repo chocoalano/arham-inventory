@@ -48,8 +48,21 @@ class ProductVariantsTable
                     ->sortable()
                     ->searchable(),
 
+                TextColumn::make('product.category.name')
+                    ->label('Kategori')
+                    ->sortable()
+                    ->searchable(),
+                TextColumn::make('product.name')
+                    ->label('Nama Produk')
+                    ->sortable()
+                    ->searchable(),
+
                 TextColumn::make('sku_variant')
                     ->label('SKU Varian')
+                    ->sortable()
+                    ->searchable(),
+                TextColumn::make('name')
+                    ->label('Nama Varian')
                     ->sortable()
                     ->searchable(),
 

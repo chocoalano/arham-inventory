@@ -39,6 +39,7 @@ class ProductsTable
             ->columns([
                 TextColumn::make('sku')->searchable(),
                 TextColumn::make('name')->searchable(),
+                TextColumn::make('category.name')->searchable(),
                 TextColumn::make('model')->searchable(),
                 ImageColumn::make('imagesPrimary.image_path')
                     ->label('Gambar')

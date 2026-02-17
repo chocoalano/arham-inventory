@@ -28,6 +28,7 @@ class Product extends Model
         'brand',
         'description',
         'is_active',
+        'product_category_id',
     ];
 
     protected $casts = [
@@ -162,35 +163,40 @@ class Product extends Model
         }
 
         // 2) Suffix tanggal & random 4 char (base36)
-        $date   = now()->format('ymd');
-        $rand4  = strtoupper(Str::random(4)); // quick & readable
-        $sep    = '-';
+        $date = now()->format('ymd');
+        $rand4 = strtoupper(Str::random(4)); // quick & readable
+        $sep = '-';
 
         // 3) Pastikan total panjang <= $maxLen (BASE + 1 + YYMMDD + 1 + RAND4)
         $staticSuffix = "{$sep}{$date}{$sep}{$rand4}";
         $allowBaseLen = max(1, $maxLen - mb_strlen($staticSuffix));
-        $baseTrimmed  = mb_substr($base, 0, $allowBaseLen);
+        $baseTrimmed = mb_substr($base, 0, $allowBaseLen);
 
         $candidate = "{$baseTrimmed}{$staticSuffix}";
 
         // 4) Cek keunikan; jika tabrakan, tambah -{RAND4} ulang (loop aman)
         $tries = 0;
         while (static::query()->where('sku', $candidate)->exists()) {
-            $rand4  = strtoupper(Str::random(4));
+            $rand4 = strtoupper(Str::random(4));
             $staticSuffix = "{$sep}{$date}{$sep}{$rand4}";
             $allowBaseLen = max(1, $maxLen - mb_strlen($staticSuffix));
-            $baseTrimmed  = mb_substr($base, 0, $allowBaseLen);
-            $candidate    = "{$baseTrimmed}{$staticSuffix}";
+            $baseTrimmed = mb_substr($base, 0, $allowBaseLen);
+            $candidate = "{$baseTrimmed}{$staticSuffix}";
 
             if (++$tries > 25) {
                 // last resort: sku random tapi tetap pendek & unik
                 $candidate = 'PRD-' . strtoupper(Str::random(10));
-                if (! static::query()->where('sku', $candidate)->exists()) {
+                if (!static::query()->where('sku', $candidate)->exists()) {
                     break;
                 }
             }
         }
 
         return $candidate;
+    }
+
+    public function category(): BelongsTo
+    {
+        return $this->belongsTo(ProductCategory::class, 'product_category_id');
     }
 }

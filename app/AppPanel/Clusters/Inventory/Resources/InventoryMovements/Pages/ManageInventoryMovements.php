@@ -6,8 +6,10 @@ use App\AppPanel\Clusters\Inventory\Resources\InventoryMovements\InventoryMoveme
 use App\Filament\Exports\InventoryMovementExporter;
 use App\Filament\Imports\InventoryMovementImporter;
 use App\Models\Ecommerce\Product;
+use App\Models\Inventory\InventoryMovement;
 use App\Models\Inventory\ProductVariant;
 use App\Models\Inventory\Transaction;
+use App\Models\Inventory\Warehouse;
 use App\Models\Inventory\WarehouseVariantStock;
 use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
@@ -17,10 +19,10 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ManageRecords;
+use Filament\Support\Exceptions\Halt;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 
 class ManageInventoryMovements extends ManageRecords
 {
@@ -29,9 +31,25 @@ class ManageInventoryMovements extends ManageRecords
     protected function getHeaderActions(): array
     {
         return [
+            // =========================================================
+            // CREATE INVENTORY MOVEMENT (transfer / to ecommerce)
+            // + VALIDASI STOK TEGAS: tidak boleh minus, cek (qty - reserved_qty)
+            // =========================================================
             CreateAction::make()
                 ->using(function (array $data): Model {
+                    // Helper: kirim Notification danger lalu throw Halt
+                    $failWith = function (string $message): never {
+                        Notification::make()
+                            ->title('Validasi Gagal')
+                            ->body($message)
+                            ->danger()
+                            ->persistent()
+                            ->send();
+                        throw new Halt();
+                    };
+
                     DB::beginTransaction();
+
                     try {
                         $qty = (int) abs($data['qty_change'] ?? $data['qty'] ?? 0);
                         $sourceId = (int) ($data['source_warehouse_id'] ?? 0);
@@ -42,25 +60,24 @@ class ManageInventoryMovements extends ManageRecords
 
                         // --- Validasi dasar
                         if ($qty <= 0) {
-                            throw ValidationException::withMessages([
-                                'qty_change' => 'Qty harus lebih dari 0.'
-                            ]);
+                            $failWith('Qty harus lebih dari 0.');
                         }
+
                         if ($sourceId <= 0) {
-                            throw ValidationException::withMessages([
-                                'source_warehouse_id' => 'Gudang sumber wajib diisi.'
-                            ]);
+                            $failWith('Gudang sumber wajib diisi.');
                         }
+
                         if ($destId < 0 || $sourceId === $destId) {
-                            throw ValidationException::withMessages([
-                                'destination_warehouse_id' => 'Gudang tujuan tidak valid atau sama dengan gudang sumber.'
-                            ]);
+                            $failWith('Gudang tujuan tidak valid atau sama dengan gudang sumber.');
                         }
-                        if (! ProductVariant::query()->whereKey($variantId)->exists()) {
-                            throw ValidationException::withMessages([
-                                'product_variant_id' => 'Varian tidak valid.'
-                            ]);
+
+                        if (!ProductVariant::query()->whereKey($variantId)->exists()) {
+                            $failWith('Varian produk tidak valid.');
                         }
+
+                        // =========================================================
+                        // DEST = 0 => pindah dari gudang ke "ecommerce stock"
+                        // =========================================================
                         if ($destId === 0 && $sourceId !== 0) {
                             $trx = Transaction::create([
                                 'type' => 'pemindahan',
@@ -71,44 +88,55 @@ class ManageInventoryMovements extends ManageRecords
                                 'remarks' => $remarks,
                             ]);
 
+                            // --- Lock sumber
                             $source = WarehouseVariantStock::query()
                                 ->where('warehouse_id', $sourceId)
                                 ->where('product_variant_id', $variantId)
                                 ->lockForUpdate()
                                 ->first();
 
-                            if (! $source || $source->qty < $qty) {
-                                throw ValidationException::withMessages([
-                                    'qty_change' => 'Stok tidak mencukupi di gudang sumber.'
-                                ]);
+                            if (!$source) {
+                                $failWith('Stok varian ini tidak ditemukan di gudang sumber.');
                             }
-                            $source->decrement('qty', $qty);
+
+                            // --- VALIDASI TEGAS (stok tersedia = qty - reserved_qty)
+                            $reserved = (int) ($source->reserved_qty ?? 0);
+                            $available = (int) $source->qty - $reserved;
+
+                            if ($available < $qty) {
+                                $failWith("Stok tidak mencukupi di gudang sumber. Tersedia: {$available} (stok: {$source->qty}, reserved: {$reserved}).");
+                            }
+
+                            // --- Decrement aman (guarded, anti race condition)
+                            $affected = WarehouseVariantStock::query()
+                                ->whereKey($source->id)
+                                ->whereRaw('(qty - COALESCE(reserved_qty,0)) >= ?', [$qty])
+                                ->decrement('qty', $qty);
+
+                            if ($affected === 0) {
+                                $failWith('Stok berubah / tidak mencukupi saat diproses. Silakan coba lagi.');
+                            }
 
                             // Ambil data produk variant
                             $prod_data = ProductVariant::with('product')->find($variantId);
-
                             if (!$prod_data || !$prod_data->product) {
-                                throw ValidationException::withMessages([
-                                    'product_variant_id' => 'Data produk tidak ditemukan.'
-                                ]);
+                                $failWith('Data produk tidak ditemukan.');
                             }
 
-                            // --- Stok: tambah ke produk ecommerce (gunakan model Product dari Ecommerce)
+                            // --- Tambah ke stok ecommerce product (lock)
                             $dest = Product::query()
                                 ->where('id', $prod_data->product->id)
                                 ->lockForUpdate()
                                 ->first();
 
-                            if ($dest) {
-                                $dest->increment('stock', $qty);
-                            } else {
-                                throw ValidationException::withMessages([
-                                    'product_variant_id' => 'Produk ecommerce tidak ditemukan. Pastikan produk sudah dibuat di katalog ecommerce.'
-                                ]);
+                            if (!$dest) {
+                                $failWith('Produk ecommerce tidak ditemukan. Pastikan produk sudah dibuat di katalog ecommerce.');
                             }
 
+                            $dest->increment('stock', $qty);
+
                             // --- Movements (audit trail)
-                            $movementOut = $trx->inventoryMovement()->create([
+                            $movementOut = $trx->inventoryMovements()->create([
                                 'from_warehouse_id' => $sourceId,
                                 'product_variant_id' => $variantId,
                                 'qty_change' => -$qty,
@@ -118,7 +146,7 @@ class ManageInventoryMovements extends ManageRecords
                                 'created_by' => auth()->id(),
                             ]);
 
-                            $trx->inventoryMovement()->create([
+                            $trx->inventoryMovements()->create([
                                 'from_warehouse_id' => $sourceId,
                                 'product_variant_id' => $variantId,
                                 'qty_change' => $qty,
@@ -130,8 +158,9 @@ class ManageInventoryMovements extends ManageRecords
 
                             $firstMovement = $movementOut;
                         } else {
-                            // --- Header transaksi (transfer antar gudang)
-                            /** @var \App\Models\Inventory\Transaction $trx */
+                            // =========================================================
+                            // Transfer antar gudang
+                            // =========================================================
                             $trx = Transaction::create([
                                 'type' => 'pemindahan',
                                 'transaction_date' => $occurred,
@@ -142,21 +171,36 @@ class ManageInventoryMovements extends ManageRecords
                                 'remarks' => $remarks,
                             ]);
 
-                            // --- Stok: kurangi sumber (lock)
+                            // --- Lock sumber
                             $source = WarehouseVariantStock::query()
                                 ->where('warehouse_id', $sourceId)
                                 ->where('product_variant_id', $variantId)
                                 ->lockForUpdate()
                                 ->first();
 
-                            if (! $source || $source->qty < $qty) {
-                                throw ValidationException::withMessages([
-                                    'qty_change' => 'Stok tidak mencukupi di gudang sumber.'
-                                ]);
+                            if (!$source) {
+                                $failWith('Stok varian ini tidak ditemukan di gudang sumber.');
                             }
-                            $source->decrement('qty', $qty);
 
-                            // --- Stok: tambah tujuan (lock / create if missing)
+                            // --- VALIDASI TEGAS (stok tersedia = qty - reserved_qty)
+                            $reserved = (int) ($source->reserved_qty ?? 0);
+                            $available = (int) $source->qty - $reserved;
+
+                            if ($available < $qty) {
+                                $failWith("Stok tidak mencukupi di gudang sumber. Tersedia: {$available} (stok: {$source->qty}, reserved: {$reserved}).");
+                            }
+
+                            // --- Decrement aman (guarded)
+                            $affected = WarehouseVariantStock::query()
+                                ->whereKey($source->id)
+                                ->whereRaw('(qty - COALESCE(reserved_qty,0)) >= ?', [$qty])
+                                ->decrement('qty', $qty);
+
+                            if ($affected === 0) {
+                                $failWith('Stok berubah / tidak mencukupi saat diproses. Silakan coba lagi.');
+                            }
+
+                            // --- Lock tujuan (create if missing)
                             $dest = WarehouseVariantStock::query()
                                 ->where('warehouse_id', $destId)
                                 ->where('product_variant_id', $variantId)
@@ -175,7 +219,7 @@ class ManageInventoryMovements extends ManageRecords
                             }
 
                             // --- Movements (audit trail)
-                            $movementOut = $trx->inventoryMovement()->create([
+                            $movementOut = $trx->inventoryMovements()->create([
                                 'from_warehouse_id' => $sourceId,
                                 'to_warehouse_id' => $destId,
                                 'product_variant_id' => $variantId,
@@ -186,7 +230,7 @@ class ManageInventoryMovements extends ManageRecords
                                 'created_by' => auth()->id(),
                             ]);
 
-                            $trx->inventoryMovement()->create([
+                            $trx->inventoryMovements()->create([
                                 'from_warehouse_id' => $sourceId,
                                 'to_warehouse_id' => $destId,
                                 'product_variant_id' => $variantId,
@@ -199,6 +243,7 @@ class ManageInventoryMovements extends ManageRecords
 
                             $firstMovement = $movementOut;
                         }
+
                         DB::commit();
 
                         Notification::make()
@@ -207,108 +252,273 @@ class ManageInventoryMovements extends ManageRecords
                             ->send();
 
                         return $firstMovement;
-                    } catch (ValidationException $ve) {
+                    } catch (Halt $e) {
                         DB::rollBack();
-                        throw $ve;
+                        throw $e;
                     } catch (\Throwable $e) {
                         DB::rollBack();
+
                         Notification::make()
-                            ->title('Terjadi kesalahan: ' . $e->getMessage())
+                            ->title('Terjadi kesalahan')
+                            ->body($e->getMessage())
                             ->danger()
+                            ->persistent()
                             ->send();
-                        throw $e;
+
+                        throw new Halt();
                     }
                 }),
+
+            // =========================================================
+            // ADJUST STOCK
+            // - Support tambah & kurangi stok
+            // - Validasi tegas: pengurangan tidak boleh melebihi stok tersedia
+            // - Buat record InventoryMovement untuk audit trail
+            // - Matikan successNotification bawaan Filament
+            // =========================================================
             Action::make('Adjust Stock')
-                ->visible(fn (): bool => auth()->user()?->hasRole('Superadmin') || auth()->user()?->hasPermissionTo('export-transaction'))
+                ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin') || auth()->user()?->hasPermissionTo('export-transaction'))
                 ->requiresConfirmation()
+                ->successNotification(null)
+                ->failureNotification(null)
                 ->form([
+                    Select::make('adjustment_type')
+                        ->label('Jenis Penyesuaian')
+                        ->options([
+                            'add' => 'Tambah Stok',
+                            'reduce' => 'Kurangi Stok',
+                        ])
+                        ->default('add')
+                        ->required()
+                        ->reactive(),
+
                     Select::make('from_warehouse_id')
-                        ->relationship(name: 'from_warehouse', titleAttribute: 'name')
+                        ->label('Gudang')
+                        ->options(function () {
+                            return Warehouse::query()
+                                ->where('is_active', true)
+                                ->orderBy('name')
+                                ->pluck('name', 'id')
+                                ->toArray();
+                        })
                         ->searchable()
                         ->preload()
-                        ->reactive(),
+                        ->reactive()
+                        ->required(),
+
                     Select::make('product_variant_id')
-                        ->label('Varian Produk (ada di gudang)')
+                        ->label('Varian Produk')
                         ->options(function (callable $get) {
                             $wid = $get('from_warehouse_id');
-                            if ($wid === null && (int) $wid <= 0) {
+
+                            if ($wid === null || (int) $wid <= 0) {
                                 return [];
-                            } else {
-                                $x = WarehouseVariantStock::query()
-                                    ->where('warehouse_id', $wid)
+                            }
+
+                            $adjustmentType = $get('adjustment_type');
+
+                            if ($adjustmentType === 'reduce') {
+                                // Kurangi: hanya tampilkan varian yang punya stok > 0
+                                return WarehouseVariantStock::query()
+                                    ->where('warehouse_id', (int) $wid)
+                                    ->whereRaw('(COALESCE(qty,0) - COALESCE(reserved_qty,0)) > 0')
                                     ->join('product_variants as pv', 'pv.id', '=', 'warehouse_variant_stocks.product_variant_id')
                                     ->orderBy('pv.sku_variant')
                                     ->pluck('pv.sku_variant', 'warehouse_variant_stocks.product_variant_id')
                                     ->toArray();
-
-                                return array_map(function ($variant) {
-                                    return $variant;
-                                }, $x);
                             }
+
+                            // Tambah: tampilkan semua varian yang ada di gudang ini
+                            return WarehouseVariantStock::query()
+                                ->where('warehouse_id', (int) $wid)
+                                ->join('product_variants as pv', 'pv.id', '=', 'warehouse_variant_stocks.product_variant_id')
+                                ->orderBy('pv.sku_variant')
+                                ->pluck('pv.sku_variant', 'warehouse_variant_stocks.product_variant_id')
+                                ->toArray();
                         })
                         ->searchable()
                         ->reactive()
                         ->required(),
+
+                    TextInput::make('current_stock_info')
+                        ->label('Info Stok Saat Ini')
+                        ->disabled()
+                        ->dehydrated(false)
+                        ->default(function (callable $get) {
+                            $wid = (int) ($get('from_warehouse_id') ?? 0);
+                            $vid = (int) ($get('product_variant_id') ?? 0);
+                            if ($wid <= 0 || $vid <= 0) {
+                                return '-';
+                            }
+                            $stock = WarehouseVariantStock::query()
+                                ->where('warehouse_id', $wid)
+                                ->where('product_variant_id', $vid)
+                                ->first();
+                            if (!$stock) {
+                                return 'Stok: 0';
+                            }
+                            $available = (int) $stock->qty - (int) ($stock->reserved_qty ?? 0);
+                            return "Stok: {$stock->qty} | Reserved: " . ($stock->reserved_qty ?? 0) . " | Tersedia: {$available}";
+                        })
+                        ->reactive(),
+
                     TextInput::make('qty')
-                        ->label('Adjustment Qty')
-                        ->helperText('Masukkan jumlah penyesuaian untuk varian produk ini. Masukkan dalam angka positif untuk menambah stok.')
-                        ->numeric()->minValue(1),
+                        ->label('Jumlah Penyesuaian')
+                        ->helperText('Masukkan jumlah unit yang akan ditambah/dikurangi.')
+                        ->numeric()
+                        ->minValue(1)
+                        ->required()
+                        ->maxValue(function (callable $get) {
+                            // Batasi max hanya untuk pengurangan stok
+                            if ($get('adjustment_type') !== 'reduce') {
+                                return null;
+                            }
+                            $wid = (int) ($get('from_warehouse_id') ?? 0);
+                            $vid = (int) ($get('product_variant_id') ?? 0);
+                            if ($wid <= 0 || $vid <= 0) {
+                                return 0;
+                            }
+                            return (int) (WarehouseVariantStock::query()
+                                ->where('warehouse_id', $wid)
+                                ->where('product_variant_id', $vid)
+                                ->selectRaw('COALESCE(qty,0) - COALESCE(reserved_qty,0) AS soh')
+                                ->value('soh') ?? 0);
+                        })
+                        ->reactive(),
+
+                    TextInput::make('remarks')
+                        ->label('Catatan')
+                        ->helperText('Opsional: alasan penyesuaian stok.'),
                 ])
-                ->action(function (array $data): void {
+                ->action(function (array $data, Action $action): void {
+                    // Helper: kirim Notification danger lalu halt
+                    $failWith = function (string $message) use ($action): never {
+                        Notification::make()
+                            ->title('Validasi Gagal')
+                            ->body($message)
+                            ->danger()
+                            ->persistent()
+                            ->send();
+                        $action->halt();
+                    };
+
                     DB::beginTransaction();
+
                     try {
+                        $adjustmentType = $data['adjustment_type'] ?? 'add';
                         $warehouseId = (int) ($data['from_warehouse_id'] ?? 0);
                         $variantId = (int) ($data['product_variant_id'] ?? 0);
-                        $qty = (int) ($data['qty'] ?? 0);
+                        $qty = (int) abs($data['qty'] ?? 0);
+                        $remarks = $data['remarks'] ?? null;
 
-                        if ($warehouseId <= 0 || $variantId <= 0 || $qty <= 0) {
-                            Notification::make()
-                                ->title('Data tidak valid untuk penyesuaian stok')
-                                ->danger()
-                                ->send();
-                            DB::rollBack();
-
-                            return;
+                        if ($warehouseId <= 0) {
+                            $failWith('Gudang wajib diisi.');
                         }
 
-                        // Lock the stock row if exists
+                        if ($variantId <= 0) {
+                            $failWith('Varian wajib diisi.');
+                        }
+
+                        if ($qty <= 0) {
+                            $failWith('Qty harus lebih dari 0.');
+                        }
+
+                        // Lock the stock row
                         $stock = WarehouseVariantStock::query()
                             ->where('warehouse_id', $warehouseId)
                             ->where('product_variant_id', $variantId)
                             ->lockForUpdate()
                             ->first();
 
-                        if ($stock) {
-                            $stock->increment('qty', $qty);
+                        if ($adjustmentType === 'reduce') {
+                            // --- KURANGI STOK ---
+                            if (!$stock) {
+                                $failWith('Stok varian ini tidak ditemukan di gudang.');
+                            }
+
+                            $reserved = (int) ($stock->reserved_qty ?? 0);
+                            $available = (int) $stock->qty - $reserved;
+
+                            if ($available < $qty) {
+                                $failWith("Stok tidak mencukupi. Tersedia: {$available} (stok: {$stock->qty}, reserved: {$reserved}).");
+                            }
+
+                            // Guarded decrement (anti race condition)
+                            $affected = WarehouseVariantStock::query()
+                                ->whereKey($stock->id)
+                                ->whereRaw('(qty - COALESCE(reserved_qty,0)) >= ?', [$qty])
+                                ->decrement('qty', $qty);
+
+                            if ($affected === 0) {
+                                $failWith('Stok berubah saat diproses. Silakan coba lagi.');
+                            }
+
+                            $qtyChange = -$qty;
+                            $movementType = 'out';
                         } else {
-                            WarehouseVariantStock::create([
-                                'warehouse_id' => $warehouseId,
-                                'product_variant_id' => $variantId,
-                                'qty' => $qty,
-                                'reserved_qty' => 0,
-                            ]);
+                            // --- TAMBAH STOK ---
+                            if ($stock) {
+                                $stock->increment('qty', $qty);
+                            } else {
+                                WarehouseVariantStock::create([
+                                    'warehouse_id' => $warehouseId,
+                                    'product_variant_id' => $variantId,
+                                    'qty' => $qty,
+                                    'reserved_qty' => 0,
+                                ]);
+                            }
+
+                            $qtyChange = $qty;
+                            $movementType = 'in';
                         }
+
+                        // --- Buat record InventoryMovement untuk audit trail ---
+                        $adjustLabel = $adjustmentType === 'add' ? 'Penambahan' : 'Pengurangan';
+                        $movementRemarks = "Penyesuaian stok ({$adjustLabel}): " . ($adjustmentType === 'add' ? '+' : '-') . $qty
+                            . ($remarks ? " | {$remarks}" : '');
+
+                        InventoryMovement::create([
+                            'transaction_id' => null,
+                            'from_warehouse_id' => $warehouseId,
+                            'to_warehouse_id' => null,
+                            'product_variant_id' => $variantId,
+                            'qty_change' => $qtyChange,
+                            'type' => $movementType,
+                            'occurred_at' => now(),
+                            'remarks' => $movementRemarks,
+                            'created_by' => auth()->id(),
+                        ]);
 
                         DB::commit();
 
                         Notification::make()
                             ->title('Penyesuaian stok berhasil')
+                            ->body("Stok varian berhasil di" . ($adjustmentType === 'add' ? 'tambah' : 'kurangi') . " sebanyak {$qty} unit.")
                             ->success()
                             ->send();
+                    } catch (Halt $e) {
+                        DB::rollBack();
+                        throw $e;
                     } catch (\Throwable $e) {
                         DB::rollBack();
+
                         Notification::make()
-                            ->title('Gagal menyesuaikan stok: '.$e->getMessage())
+                            ->title('Gagal menyesuaikan stok')
+                            ->body($e->getMessage())
                             ->danger()
+                            ->persistent()
                             ->send();
+
+                        $action->halt();
                     }
                 }),
+
             ImportAction::make()
-                ->visible(fn (): bool => auth()->user()?->hasRole('Superadmin') || auth()->user()?->hasPermissionTo('import-transaction'))
+                ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin') || auth()->user()?->hasPermissionTo('import-transaction'))
                 ->importer(InventoryMovementImporter::class),
+
             ExportAction::make()
-                ->visible(fn (): bool => auth()->user()?->hasRole('Superadmin') || auth()->user()?->hasPermissionTo('export-transaction'))
+                ->visible(fn(): bool => auth()->user()?->hasRole('Superadmin') || auth()->user()?->hasPermissionTo('export-transaction'))
                 ->exporter(InventoryMovementExporter::class),
         ];
     }

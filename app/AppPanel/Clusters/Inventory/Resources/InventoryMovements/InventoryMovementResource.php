@@ -114,6 +114,10 @@ class InventoryMovementResource extends Resource
                             ->preload()
                             ->required()
                             ->rules(['different:source_warehouse_id'])
+                            ->validationMessages([
+                                'different' => 'Gudang tujuan tidak boleh sama dengan gudang sumber.',
+                                'required' => 'Gudang tujuan wajib diisi.',
+                            ])
                             ->reactive(),
 
                         // Varian Produk
@@ -147,6 +151,26 @@ class InventoryMovementResource extends Resource
                             ->preload()
                             ->required()
                             ->disabled(fn(Get $get) => blank($get('source_warehouse_id')))
+                            ->rules([
+                                fn(Get $get): \Closure => function (string $attribute, $value, \Closure $fail) use ($get) {
+                                    $src = (int) ($get('source_warehouse_id') ?? 0);
+                                    $vid = (int) ($value ?? 0);
+                                    if ($src <= 0 || $vid <= 0) {
+                                        return;
+                                    }
+                                    $exists = WarehouseVariantStock::query()
+                                        ->where('warehouse_id', $src)
+                                        ->where('product_variant_id', $vid)
+                                        ->whereRaw('(COALESCE(qty,0) - COALESCE(reserved_qty,0)) > 0')
+                                        ->exists();
+                                    if (!$exists) {
+                                        $fail('Stok varian ini tidak tersedia di gudang sumber.');
+                                    }
+                                },
+                            ])
+                            ->validationMessages([
+                                'required' => 'Varian produk wajib dipilih.',
+                            ])
                             ->reactive(),
 
                         // Info stok tersedia (read-only)
@@ -189,6 +213,30 @@ class InventoryMovementResource extends Resource
                                     ->selectRaw('COALESCE(qty,0) - COALESCE(reserved_qty,0) AS soh')
                                     ->value('soh') ?? 0);
                             })
+                            ->rules([
+                                fn(Get $get): \Closure => function (string $attribute, $value, \Closure $fail) use ($get) {
+                                    $src = (int) ($get('source_warehouse_id') ?? 0);
+                                    $vid = (int) ($get('product_variant_id') ?? 0);
+                                    $qty = (int) abs($value ?? 0);
+                                    if ($src <= 0 || $vid <= 0 || $qty <= 0) {
+                                        return;
+                                    }
+                                    $available = (int) (WarehouseVariantStock::query()
+                                        ->where('warehouse_id', $src)
+                                        ->where('product_variant_id', $vid)
+                                        ->selectRaw('COALESCE(qty,0) - COALESCE(reserved_qty,0) AS soh')
+                                        ->value('soh') ?? 0);
+                                    if ($qty > $available) {
+                                        $fail("Stok tidak mencukupi di gudang sumber. Stok tersedia: {$available} unit.");
+                                    }
+                                },
+                            ])
+                            ->validationMessages([
+                                'max' => 'Jumlah melebihi stok tersedia di gudang sumber.',
+                                'min' => 'Jumlah harus minimal 1 unit.',
+                                'required' => 'Jumlah dipindahkan wajib diisi.',
+                                'numeric' => 'Jumlah harus berupa angka.',
+                            ])
                             ->reactive(),
 
                         // Jenis transaksi
