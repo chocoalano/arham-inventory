@@ -15,6 +15,7 @@ use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
 use Filament\Actions\ExportAction;
 use Filament\Actions\ImportAction;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
@@ -290,7 +291,7 @@ class ManageInventoryMovements extends ManageRecords
                         ])
                         ->default('add')
                         ->required()
-                        ->reactive(),
+                        ->live(),
 
                     Select::make('from_warehouse_id')
                         ->label('Gudang')
@@ -303,7 +304,11 @@ class ManageInventoryMovements extends ManageRecords
                         })
                         ->searchable()
                         ->preload()
-                        ->reactive()
+                        ->live()
+                        ->afterStateUpdated(function (callable $set): void {
+                            $set('product_variant_id', null);
+                            $set('qty', null);
+                        })
                         ->required(),
 
                     Select::make('product_variant_id')
@@ -337,29 +342,46 @@ class ManageInventoryMovements extends ManageRecords
                                 ->toArray();
                         })
                         ->searchable()
-                        ->reactive()
+                        ->live()
+                        ->afterStateUpdated(fn(callable $set) => $set('qty', null))
                         ->required(),
 
-                    TextInput::make('current_stock_info')
+                    Placeholder::make('current_stock_info')
                         ->label('Info Stok Saat Ini')
-                        ->disabled()
-                        ->dehydrated(false)
-                        ->default(function (callable $get) {
+                        ->content(function (callable $get) {
                             $wid = (int) ($get('from_warehouse_id') ?? 0);
                             $vid = (int) ($get('product_variant_id') ?? 0);
-                            if ($wid <= 0 || $vid <= 0) {
-                                return '-';
+
+                            if ($wid <= 0) {
+                                return 'Pilih gudang terlebih dahulu untuk melihat kondisi stok.';
                             }
+
+                            if ($vid <= 0) {
+                                return 'Pilih varian produk untuk menampilkan stok fisik, reservasi, dan stok tersedia.';
+                            }
+
+                            $adjustmentType = $get('adjustment_type') === 'reduce' ? 'reduce' : 'add';
                             $stock = WarehouseVariantStock::query()
                                 ->where('warehouse_id', $wid)
                                 ->where('product_variant_id', $vid)
                                 ->first();
-                            if (!$stock) {
-                                return 'Stok: 0';
+
+                            $qty = (int) ($stock->qty ?? 0);
+                            $reserved = (int) ($stock->reserved_qty ?? 0);
+                            $available = max(0, $qty - $reserved);
+                            $baseInfo = "Stok fisik: {$qty} | Reserved: {$reserved} | Tersedia: {$available}.";
+
+                            if ($adjustmentType === 'reduce') {
+                                if ($available <= 0) {
+                                    return "{$baseInfo} Pengurangan tidak dapat dilakukan karena stok tersedia 0.";
+                                }
+
+                                return "{$baseInfo} Maksimum pengurangan saat ini: {$available} unit.";
                             }
-                            $available = (int) $stock->qty - (int) ($stock->reserved_qty ?? 0);
-                            return "Stok: {$stock->qty} | Reserved: " . ($stock->reserved_qty ?? 0) . " | Tersedia: {$available}";
+
+                            return "{$baseInfo} Penambahan akan menambah stok fisik di gudang ini.";
                         })
+                        ->columnSpanFull()
                         ->reactive(),
 
                     TextInput::make('qty')

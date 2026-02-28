@@ -14,10 +14,14 @@
         "codeat3/blade-memory-icons": "^1.1",
         "filament/filament": "^4.0",
         "laravel/framework": "^12.0",
+        "laravel/octane": "^2.14",
         "laravel/tinker": "^2.10.1",
         "midtrans/midtrans-php": "^2.6",
+        "predis/predis": "^3.4",
         "pxlrbt/filament-activity-log": "^2.0",
         "spatie/laravel-activitylog": "^4.10",
+        "spiral/roadrunner-cli": "^2.6.0",
+        "spiral/roadrunner-http": "^3.3.0",
         "zvizvi/relation-manager-repeater": "^2.0"
     },
     "require-dev": {
