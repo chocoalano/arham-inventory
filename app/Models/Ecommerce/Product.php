@@ -36,6 +36,12 @@ class Product extends Model
     {
         return $this->belongsTo(\App\Models\Inventory\Product::class, 'sku', 'sku');
     }
+
+    public function inventoryProduct(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\Inventory\Product::class, 'id', 'id');
+    }
+
     public function brand(): BelongsTo
     {
         return $this->belongsTo(Brand::class);

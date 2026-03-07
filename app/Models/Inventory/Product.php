@@ -199,4 +199,9 @@ class Product extends Model
     {
         return $this->belongsTo(ProductCategory::class, 'product_category_id');
     }
+
+    public function ecommerceProduct(): HasOne
+    {
+        return $this->hasOne(\App\Models\Ecommerce\Product::class, 'id', 'id');
+    }
 }

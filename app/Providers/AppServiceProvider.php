@@ -17,6 +17,7 @@ use App\Models\Inventory\ProductVariant;
 use App\Models\Inventory\Supplier;
 use App\Models\Inventory\Transaction;
 use App\Models\Inventory\Warehouse;
+use App\Observers\Inventory\ProductObserver;
 use App\Observers\Inventory\ProductCategoryObserver;
 use App\Models\RawMaterial\ProductBom;
 use App\Models\RawMaterial\RawMaterial;
@@ -70,6 +71,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Product::observe(ProductObserver::class);
         ProductCategory::observe(ProductCategoryObserver::class);
 
         Gate::policy(User::class, UserPolicy::class);
