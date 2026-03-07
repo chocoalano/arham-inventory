@@ -53,6 +53,7 @@ use App\Policies\Produksi\UnitConversationPolicy;
 use App\Policies\Produksi\UnitPolicy;
 use App\Policies\RolePolicy;
 use App\Policies\UserPolicy;
+use Illuminate\Console\Command as ArtisanCommand;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
@@ -63,7 +64,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Ensure lazy-loaded console commands always receive the application instance.
+        $this->app->resolving(ArtisanCommand::class, function (ArtisanCommand $command): void {
+            $command->setLaravel($this->app);
+        });
     }
 
     /**
