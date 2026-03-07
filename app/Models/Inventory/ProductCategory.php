@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class ProductCategory extends Model
@@ -33,5 +34,10 @@ class ProductCategory extends Model
     public function products(): BelongsToMany
     {
         return $this->belongsToMany(Product::class, 'product_category_product', 'product_category_id', 'product_id');
+    }
+
+    public function ecommerceCategory(): HasOne
+    {
+        return $this->hasOne(\App\Models\Ecommerce\ProductCategory::class, 'id', 'id');
     }
 }

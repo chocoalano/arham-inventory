@@ -35,4 +35,9 @@ class ProductCategory extends Model
     {
         return $this->belongsToMany(Product::class, 'product_category_product', 'product_category_id', 'product_id');
     }
+
+    public function inventoryCategory(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\Inventory\ProductCategory::class, 'id', 'id');
+    }
 }

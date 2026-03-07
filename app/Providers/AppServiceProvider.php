@@ -12,10 +12,12 @@ use App\Models\Finance\ProductAccountLink;
 use App\Models\Inventory\Invoice;
 use App\Models\Inventory\Payment;
 use App\Models\Inventory\Product;
+use App\Models\Inventory\ProductCategory;
 use App\Models\Inventory\ProductVariant;
 use App\Models\Inventory\Supplier;
 use App\Models\Inventory\Transaction;
 use App\Models\Inventory\Warehouse;
+use App\Observers\Inventory\ProductCategoryObserver;
 use App\Models\RawMaterial\ProductBom;
 use App\Models\RawMaterial\RawMaterial;
 use App\Models\RawMaterial\RawMaterialBatch;
@@ -68,6 +70,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        ProductCategory::observe(ProductCategoryObserver::class);
+
         Gate::policy(User::class, UserPolicy::class);
         Gate::policy(Role::class, RolePolicy::class);
 
